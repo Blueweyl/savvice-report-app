@@ -2,10 +2,13 @@
   "name": "savvice-report-app",
   "version": "1.0.0",
   "description": "Savvice Routine Maintenance Department - Report Management System",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "install:all": "cd server && npm install && cd ../client && npm install",
-    "build": "cd client && npm run build",
-    "start": "cd server && node index.js",
-    "db:init": "cd server && node db/init.js"
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "node server/index.js",
+    "db:init": "node server/db/init.js"
   }
 }
