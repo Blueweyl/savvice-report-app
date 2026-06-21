@@ -3,6 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
 import StatusBadge from '../components/StatusBadge';
 
+const STATUS_BOUND_LABELS = {
+  on_going: { label: 'ON GOING', color: 'bg-orange-500 text-white' },
+  done: { label: 'DONE', color: 'bg-green-600 text-white' },
+  pending: { label: 'PENDING', color: 'bg-gray-400 text-white' },
+};
+
 export default function ReportDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -45,8 +51,10 @@ export default function ReportDetail() {
 
   if (!report) return null;
 
+  const sb = STATUS_BOUND_LABELS[report.status_bound] || STATUS_BOUND_LABELS.pending;
+
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-4xl mx-auto">
       <button
         onClick={() => navigate(-1)}
         className="text-blue-600 hover:underline text-sm mb-4 inline-block"
@@ -54,52 +62,111 @@ export default function ReportDetail() {
         &larr; Back
       </button>
 
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="flex items-start justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gray-800">{report.title}</h2>
-          <StatusBadge status={report.status} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+      {/* Header */}
+      <div className="bg-white rounded-t-lg border border-gray-200 p-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="bg-blue-900 text-white px-3 py-2 rounded font-bold text-sm tracking-wider">SA WICE</div>
           <div>
-            <span className="text-gray-500">Submitted by:</span>
-            <span className="ml-2 text-gray-800 font-medium">{report.author_name}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Date:</span>
-            <span className="ml-2 text-gray-800">{new Date(report.created_at).toLocaleString()}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Department:</span>
-            <span className="ml-2 text-gray-800">{report.department_name}</span>
-          </div>
-          <div>
-            <span className="text-gray-500">Activity:</span>
-            <span className="ml-2 text-gray-800">{report.activity_name}</span>
+            <h2 className="text-lg font-bold text-gray-800">
+              {report.department_name} Team Accomplishment Report
+            </h2>
+            <p className="text-sm text-gray-500">Submitted by {report.author_name}</p>
           </div>
         </div>
+        <StatusBadge status={report.status} />
+      </div>
 
-        <div className="border-t border-gray-100 pt-4">
-          <h3 className="text-sm font-semibold text-gray-600 mb-2">Report Details</h3>
-          <p className="text-gray-700 whitespace-pre-wrap">{report.body}</p>
+      {/* DATE & SCHEDULE */}
+      <div className="border-x border-gray-200">
+        <div className="bg-blue-800 text-white px-6 py-3 font-bold text-sm flex items-center gap-2">
+          <span>📅</span> DATE & SCHEDULE
         </div>
+        <div className="p-6 bg-white grid grid-cols-3 gap-6">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Date</label>
+            <p className="text-sm text-gray-800">{report.report_date ? new Date(report.report_date).toLocaleDateString() : '—'}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Team</label>
+            <p className="text-sm text-gray-800">{report.team || '—'}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Status / Bound</label>
+            <span className={`px-3 py-1 rounded text-xs font-bold ${sb.color}`}>{sb.label}</span>
+          </div>
+        </div>
+      </div>
 
-        {report.admin_comment && (
-          <div className="border-t border-gray-100 pt-4 mt-4">
-            <h3 className="text-sm font-semibold text-gray-600 mb-2">Admin Comment</h3>
-            <p className="text-gray-700">{report.admin_comment}</p>
+      {/* ACTIVITY & LOCATION */}
+      <div className="border-x border-gray-200">
+        <div className="bg-blue-800 text-white px-6 py-3 font-bold text-sm flex items-center gap-2">
+          <span>🔧</span> ACTIVITY & LOCATION
+        </div>
+        <div className="p-6 bg-white space-y-4">
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Activity</label>
+              <p className="text-sm text-gray-800">{report.activity_name}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label>
+              <p className="text-sm text-gray-800">{report.activity_description || '—'}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">📍 Location From</label>
+              <p className="text-sm text-gray-800">{report.location_from || '—'}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">📍 Location To</label>
+              <p className="text-sm text-gray-800">{report.location_to || '—'}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ACCOMPLISHMENT & RESOURCES */}
+      <div className="border-x border-gray-200">
+        <div className="bg-blue-800 text-white px-6 py-3 font-bold text-sm flex items-center gap-2">
+          <span>⚙️</span> ACTUAL ACCOMPLISHMENT & RESOURCES
+        </div>
+        <div className="p-6 bg-white grid grid-cols-3 gap-6">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Accomplishment (LN.M)</label>
+            <p className="text-sm text-gray-800">{report.accomplishment || '0.00'}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Equipment / Vehicle</label>
+            <p className="text-sm text-gray-800">{report.equipment || '—'}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Operator Name</label>
+            <p className="text-sm text-gray-800">{report.operator_name || '—'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Admin Comment */}
+      {report.admin_comment && (
+        <div className="border-x border-gray-200">
+          <div className="bg-gray-700 text-white px-6 py-3 font-bold text-sm">Admin Review</div>
+          <div className="p-6 bg-white">
+            <p className="text-sm text-gray-700">{report.admin_comment}</p>
             {report.reviewer_name && (
-              <p className="text-sm text-gray-500 mt-2">
-                Reviewed by {report.reviewer_name} on{' '}
-                {new Date(report.reviewed_at).toLocaleString()}
+              <p className="text-xs text-gray-500 mt-2">
+                Reviewed by {report.reviewer_name} on {new Date(report.reviewed_at).toLocaleString()}
               </p>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
+      <div className="border-x border-b border-gray-200 rounded-b-lg" />
+
+      {/* Review Form */}
       {user?.role === 'admin' && report.status === 'pending' && (
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="mt-6 bg-white rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Review This Report</h3>
 
           {error && (
@@ -117,7 +184,6 @@ export default function ReportDetail() {
                     value="approved"
                     checked={reviewForm.status === 'approved'}
                     onChange={(e) => setReviewForm({ ...reviewForm, status: e.target.value })}
-                    className="text-green-600"
                   />
                   <span className="text-sm text-green-700 font-medium">Approve</span>
                 </label>
@@ -128,7 +194,6 @@ export default function ReportDetail() {
                     value="rejected"
                     checked={reviewForm.status === 'rejected'}
                     onChange={(e) => setReviewForm({ ...reviewForm, status: e.target.value })}
-                    className="text-red-600"
                   />
                   <span className="text-sm text-red-700 font-medium">Reject</span>
                 </label>
@@ -136,14 +201,12 @@ export default function ReportDetail() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Comment (optional)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Comment (optional)</label>
               <textarea
                 rows={3}
                 value={reviewForm.admin_comment}
                 onChange={(e) => setReviewForm({ ...reviewForm, admin_comment: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-vertical"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-vertical text-sm"
                 placeholder="Add a comment for the employee..."
               />
             </div>
@@ -151,7 +214,7 @@ export default function ReportDetail() {
             <button
               type="submit"
               disabled={!reviewForm.status || submitting}
-              className="bg-blue-700 hover:bg-blue-800 text-white font-medium px-6 py-2.5 rounded-lg transition disabled:opacity-50"
+              className="bg-blue-700 hover:bg-blue-800 text-white font-medium px-6 py-2.5 rounded transition disabled:opacity-50 text-sm"
             >
               {submitting ? 'Submitting...' : 'Submit Review'}
             </button>

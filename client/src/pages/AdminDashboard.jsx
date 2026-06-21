@@ -59,20 +59,18 @@ export default function AdminDashboard() {
         <select
           value={filters.department_id}
           onChange={(e) => setFilters({ ...filters, department_id: e.target.value })}
-          className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+          className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
         >
           <option value="">All Departments</option>
           {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} Department
-            </option>
+            <option key={d.id} value={d.id}>{d.name} Department</option>
           ))}
         </select>
 
         <select
           value={filters.status}
           onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-          className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+          className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
         >
           <option value="">All Statuses</option>
           <option value="pending">Pending</option>
@@ -92,29 +90,40 @@ export default function AdminDashboard() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Title</th>
-                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Submitted By</th>
-                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Department</th>
-                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Activity</th>
-                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Date</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Submitted By</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Dept / Activity</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Location</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Team</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Bound</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Review</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {reports.map((report) => (
                 <tr key={report.id} className="hover:bg-gray-50 transition">
-                  <td className="px-4 py-3">
-                    <Link to={`/reports/${report.id}`} className="text-blue-600 hover:underline font-medium">
-                      {report.title}
-                    </Link>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {report.report_date ? new Date(report.report_date).toLocaleDateString() : new Date(report.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{report.author_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{report.department_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{report.activity_name}</td>
-                  <td className="px-4 py-3"><StatusBadge status={report.status} /></td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(report.created_at).toLocaleDateString()}
+                  <td className="px-4 py-3">
+                    <Link to={`/reports/${report.id}`} className="text-blue-600 hover:underline font-medium text-sm">
+                      {report.activity_name}
+                    </Link>
+                    <p className="text-xs text-gray-500">{report.department_name}</p>
                   </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {report.location_from && report.location_to
+                      ? `${report.location_from} → ${report.location_to}`
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{report.team || '—'}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {report.status_bound === 'done' && <span className="text-green-600 font-semibold text-xs">DONE</span>}
+                    {report.status_bound === 'on_going' && <span className="text-orange-500 font-semibold text-xs">ON GOING</span>}
+                    {(!report.status_bound || report.status_bound === 'pending') && <span className="text-gray-500 font-semibold text-xs">PENDING</span>}
+                  </td>
+                  <td className="px-4 py-3"><StatusBadge status={report.status} /></td>
                 </tr>
               ))}
             </tbody>

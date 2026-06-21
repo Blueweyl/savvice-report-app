@@ -66,8 +66,15 @@ async function init() {
       author_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       department_id INTEGER REFERENCES departments(id),
       activity_id INTEGER REFERENCES activities(id),
-      title VARCHAR(255) NOT NULL,
-      body TEXT NOT NULL,
+      report_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      team VARCHAR(100),
+      status_bound VARCHAR(20) DEFAULT 'on_going' CHECK (status_bound IN ('on_going', 'done', 'pending')),
+      activity_description TEXT,
+      location_from VARCHAR(255),
+      location_to VARCHAR(255),
+      accomplishment DECIMAL(10,2) DEFAULT 0,
+      equipment VARCHAR(255),
+      operator_name VARCHAR(255),
       status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
       admin_comment TEXT,
       reviewed_by INTEGER REFERENCES users(id),
@@ -75,6 +82,19 @@ async function init() {
       reviewed_at TIMESTAMP
     );
   `);
+
+  const cols = ['report_date', 'team', 'status_bound', 'activity_description', 'location_from', 'location_to', 'accomplishment', 'equipment', 'operator_name'];
+  for (const col of cols) {
+    try {
+      await pool.query(`ALTER TABLE reports ADD COLUMN IF NOT EXISTS ${col} ${
+        col === 'report_date' ? 'DATE DEFAULT CURRENT_DATE' :
+        col === 'accomplishment' ? 'DECIMAL(10,2) DEFAULT 0' :
+        col === 'status_bound' ? "VARCHAR(20) DEFAULT 'on_going'" :
+        col === 'activity_description' ? 'TEXT' :
+        'VARCHAR(255)'
+      }`);
+    } catch (e) {}
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS attachments (

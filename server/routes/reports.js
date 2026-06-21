@@ -6,10 +6,14 @@ const router = express.Router();
 
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { title, body, activity_id } = req.body;
+    const {
+      activity_id, report_date, team, status_bound,
+      activity_description, location_from, location_to,
+      accomplishment, equipment, operator_name
+    } = req.body;
 
-    if (!title || !body || !activity_id) {
-      return res.status(400).json({ error: 'Title, body, and activity are required' });
+    if (!activity_id || !report_date) {
+      return res.status(400).json({ error: 'Activity and date are required' });
     }
 
     const activity = await pool.query(
@@ -22,10 +26,18 @@ router.post('/', authenticate, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO reports (author_id, department_id, activity_id, title, body)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [req.user.id, activity.rows[0].department_id, activity_id, title, body]
+      `INSERT INTO reports (
+        author_id, department_id, activity_id, report_date, team, status_bound,
+        activity_description, location_from, location_to,
+        accomplishment, equipment, operator_name
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *`,
+      [
+        req.user.id, activity.rows[0].department_id, activity_id,
+        report_date, team || null, status_bound || 'on_going',
+        activity_description || null, location_from || null, location_to || null,
+        accomplishment || 0, equipment || null, operator_name || null
+      ]
     );
 
     res.status(201).json(result.rows[0]);
