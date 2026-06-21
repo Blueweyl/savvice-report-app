@@ -42,8 +42,9 @@ export default function Home() {
       </nav>
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white py-24 px-4">
-        <div className="max-w-4xl mx-auto text-center">
+      <section className="relative text-white py-24 px-4 bg-cover bg-center" style={{ backgroundImage: "url('/hero-bg.jpg')" }}>
+        <div className="absolute inset-0 bg-[#1a1a2e]/80" />
+        <div className="relative max-w-4xl mx-auto text-center">
           <img src="/savvice-logo.png" alt="Savvice Corporation" className="h-24 mx-auto mb-8 bg-white rounded-xl px-6 py-3" />
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
             Routine Maintenance Department
