@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
 import StatusBadge from '../components/StatusBadge';
+
+const API_BASE = import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`;
 
 export default function AdminDashboard() {
   const [reports, setReports] = useState([]);
@@ -23,6 +25,18 @@ export default function AdminDashboard() {
       setReports(res.data);
       setLoading(false);
     });
+  }, [filters]);
+
+  const handleExport = useCallback((format) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const params = new URLSearchParams();
+    params.set('token', token);
+    if (filters.department_id) params.set('department_id', filters.department_id);
+
+    const url = `${API_BASE}/api/export/${format}?${params.toString()}`;
+    window.open(url, '_blank');
   }, [filters]);
 
   const counts = {
@@ -55,7 +69,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div className="flex gap-4 mb-6">
+      <div className="flex gap-4 mb-6 flex-wrap items-center">
         <select
           value={filters.department_id}
           onChange={(e) => setFilters({ ...filters, department_id: e.target.value })}
@@ -77,6 +91,27 @@ export default function AdminDashboard() {
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
         </select>
+
+        <div className="ml-auto flex gap-2">
+          <button
+            onClick={() => handleExport('excel')}
+            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Export Excel
+          </button>
+          <button
+            onClick={() => handleExport('pdf')}
+            className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Export PDF
+          </button>
+        </div>
       </div>
 
       {loading ? (
