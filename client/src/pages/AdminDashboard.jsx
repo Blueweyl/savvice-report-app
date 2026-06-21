@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../api';
 import StatusBadge from '../components/StatusBadge';
 
 const API_BASE = import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`;
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [reports, setReports] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +94,15 @@ export default function AdminDashboard() {
         </select>
 
         <div className="ml-auto flex gap-2">
+          <button
+            onClick={() => navigate('/summary')}
+            className="inline-flex items-center gap-2 bg-[#1e3a8a] hover:bg-[#1a1a2e] text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Summary Report
+          </button>
           <button
             onClick={() => handleExport('excel')}
             className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"

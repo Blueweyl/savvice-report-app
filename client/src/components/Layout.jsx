@@ -33,6 +33,9 @@ export default function Layout({ children }) {
               >
                 Dashboard
               </Link>
+              <Link to="/summary" className="text-sm text-gray-300 hover:text-white transition">
+                Summary
+              </Link>
             </nav>
           </div>
           {user && (

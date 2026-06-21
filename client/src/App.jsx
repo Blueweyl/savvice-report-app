@@ -6,6 +6,7 @@ import EmployeeDashboard from './pages/EmployeeDashboard';
 import NewReport from './pages/NewReport';
 import AdminDashboard from './pages/AdminDashboard';
 import ReportDetail from './pages/ReportDetail';
+import Summary from './pages/Summary';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children, role }) {
@@ -46,6 +47,14 @@ export default function App() {
           element={
             <PrivateRoute role="admin">
               <Layout><AdminDashboard /></Layout>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/summary"
+          element={
+            <PrivateRoute>
+              <Layout><Summary /></Layout>
             </PrivateRoute>
           }
         />

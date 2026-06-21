@@ -84,6 +84,108 @@ router.post('/', authenticate, upload.fields([
   }
 });
 
+// GET /api/reports/summary — aggregated summary for a date range
+router.get('/summary', authenticate, async (req, res) => {
+  try {
+    const { date_from, date_to, department_id } = req.query;
+
+    // Build WHERE clause
+    const conditions = [];
+    const params = [];
+
+    if (date_from) {
+      params.push(date_from);
+      conditions.push(`r.report_date >= $${params.length}`);
+    }
+    if (date_to) {
+      params.push(date_to);
+      conditions.push(`r.report_date <= $${params.length}`);
+    }
+    if (department_id) {
+      params.push(department_id);
+      conditions.push(`r.department_id = $${params.length}`);
+    }
+
+    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    // Total reports and total accomplishment
+    const totalsResult = await pool.query(
+      `SELECT COUNT(*)::int AS total_reports, COALESCE(SUM(r.accomplishment), 0) AS total_accomplishment
+       FROM reports r ${whereClause}`,
+      params
+    );
+
+    // By department
+    const byDeptResult = await pool.query(
+      `SELECT d.name AS department_name, COUNT(*)::int AS report_count, COALESCE(SUM(r.accomplishment), 0) AS total_accomplishment
+       FROM reports r
+       JOIN departments d ON r.department_id = d.id
+       ${whereClause}
+       GROUP BY d.name
+       ORDER BY d.name`,
+      params
+    );
+
+    // By activity
+    const byActivityResult = await pool.query(
+      `SELECT a.name AS activity_name, d.name AS department_name, COUNT(*)::int AS report_count, COALESCE(SUM(r.accomplishment), 0) AS total_accomplishment
+       FROM reports r
+       JOIN activities a ON r.activity_id = a.id
+       JOIN departments d ON r.department_id = d.id
+       ${whereClause}
+       GROUP BY a.name, d.name
+       ORDER BY d.name, a.name`,
+      params
+    );
+
+    // By team
+    const byTeamResult = await pool.query(
+      `SELECT COALESCE(r.team, 'Unassigned') AS team, COUNT(*)::int AS report_count, COALESCE(SUM(r.accomplishment), 0) AS total_accomplishment
+       FROM reports r
+       ${whereClause}
+       GROUP BY r.team
+       ORDER BY r.team`,
+      params
+    );
+
+    // By date
+    const byDateResult = await pool.query(
+      `SELECT r.report_date, COUNT(*)::int AS report_count, COALESCE(SUM(r.accomplishment), 0) AS total_accomplishment
+       FROM reports r
+       ${whereClause}
+       GROUP BY r.report_date
+       ORDER BY r.report_date`,
+      params
+    );
+
+    res.json({
+      date_from: date_from || null,
+      date_to: date_to || null,
+      total_reports: totalsResult.rows[0].total_reports,
+      total_accomplishment: parseFloat(totalsResult.rows[0].total_accomplishment),
+      by_department: byDeptResult.rows.map(row => ({
+        ...row,
+        total_accomplishment: parseFloat(row.total_accomplishment)
+      })),
+      by_activity: byActivityResult.rows.map(row => ({
+        ...row,
+        total_accomplishment: parseFloat(row.total_accomplishment)
+      })),
+      by_team: byTeamResult.rows.map(row => ({
+        ...row,
+        total_accomplishment: parseFloat(row.total_accomplishment)
+      })),
+      by_date: byDateResult.rows.map(row => ({
+        ...row,
+        report_date: row.report_date,
+        total_accomplishment: parseFloat(row.total_accomplishment)
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/my', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
