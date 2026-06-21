@@ -3,6 +3,8 @@ const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const pool = require('../db/pool');
 const jwt = require('jsonwebtoken');
+const path = require('path');
+const fs = require('fs');
 
 const router = express.Router();
 
@@ -41,7 +43,7 @@ function buildReportQuery(query) {
            r.activity_description, r.location_from, r.location_to, r.team,
            r.status_bound, r.accomplishment, r.equipment, r.operator_name,
            r.crew_names, r.remarks, r.status as review_status,
-           u.name as author_name
+           u.name as author_name, r.photo_before, r.photo_after
     FROM reports r
     JOIN activities a ON r.activity_id = a.id
     JOIN departments d ON r.department_id = d.id
@@ -95,54 +97,67 @@ router.get('/excel', authenticateExport, async (req, res) => {
     const result = await pool.query(sql, params);
     const reports = result.rows;
 
+    // Resolve department name for the title row
+    let departmentName = 'All Departments';
+    if (req.query.department_id) {
+      try {
+        const deptResult = await pool.query('SELECT name FROM departments WHERE id = $1', [req.query.department_id]);
+        if (deptResult.rows.length > 0) departmentName = deptResult.rows[0].name;
+      } catch (e) {
+        // Fall back to generic name
+      }
+    }
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Savvice RM System';
     workbook.created = new Date();
 
-    const sheet = workbook.addWorksheet('Accomplishment Summary', {
+    const sheet = workbook.addWorksheet('Accomplishment Report', {
       pageSetup: { orientation: 'landscape', paperSize: 9 },
     });
 
-    // Title row
-    sheet.mergeCells('A1:N1');
+    const uploadsDir = path.join(__dirname, '../uploads/');
+
+    // ── Row 1: Merged title header (A1:M1) ──
+    sheet.mergeCells('A1:M1');
     const titleCell = sheet.getCell('A1');
-    titleCell.value = 'Savvice Routine Maintenance Department - Accomplishment Summary';
-    titleCell.font = { size: 16, bold: true, color: { argb: 'FF1F2937' } };
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(1).height = 36;
+    titleCell.value = `SAVVICE Corporation — ${departmentName} Team Accomplishment Report | NLEX`;
+    titleCell.font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1E3A5F' },
+    };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    titleCell.border = {
+      top: { style: 'thin', color: { argb: 'FF1E3A5F' } },
+      bottom: { style: 'thin', color: { argb: 'FF1E3A5F' } },
+      left: { style: 'thin', color: { argb: 'FF1E3A5F' } },
+      right: { style: 'thin', color: { argb: 'FF1E3A5F' } },
+    };
+    sheet.getRow(1).height = 40;
 
-    // Filter info row
-    let filterText = 'All Reports';
-    const filterParts = [];
-    if (req.query.department_id) filterParts.push(`Department ID: ${req.query.department_id}`);
-    if (req.query.date_from) filterParts.push(`From: ${req.query.date_from}`);
-    if (req.query.date_to) filterParts.push(`To: ${req.query.date_to}`);
-    if (filterParts.length > 0) filterText = filterParts.join(' | ');
-
-    sheet.mergeCells('A2:N2');
-    const filterCell = sheet.getCell('A2');
-    filterCell.value = filterText;
-    filterCell.font = { size: 10, italic: true, color: { argb: 'FF6B7280' } };
-    filterCell.alignment = { horizontal: 'center' };
-    sheet.getRow(2).height = 20;
-
-    // Generated date row
-    sheet.mergeCells('A3:N3');
-    const dateCell = sheet.getCell('A3');
-    dateCell.value = `Generated: ${new Date().toLocaleString()}`;
-    dateCell.font = { size: 9, italic: true, color: { argb: 'FF9CA3AF' } };
-    dateCell.alignment = { horizontal: 'right' };
-    sheet.getRow(3).height = 18;
-
-    // Header row
+    // ── Row 2: Column headers (A2:M2) ──
     const headers = [
-      'Date', 'Department', 'Activity', 'Description', 'Location (From)',
-      'Location (To)', 'Team', 'Status/Bound', 'Accomplishment', 'Equipment',
-      'Operator', 'Crew Names', 'Remarks', 'Review Status'
+      'Date',              // A
+      'Activity',          // B
+      'Description',       // C
+      'Location From',     // D
+      'Location To',       // E
+      'Status/Bound',      // F
+      'Photo Before',      // G
+      'Photo After',       // H
+      'Team',              // I
+      'Accomplishment',    // J
+      'Equipment',         // K
+      'Crew Names',        // L
+      'Operator',          // M
     ];
 
-    const headerRow = sheet.addRow(headers);
-    headerRow.eachCell((cell) => {
+    const headerRow = sheet.getRow(2);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
       cell.fill = {
         type: 'pattern',
@@ -159,49 +174,123 @@ router.get('/excel', authenticateExport, async (req, res) => {
     });
     headerRow.height = 28;
 
-    // Data rows
-    reports.forEach((r, index) => {
-      const row = sheet.addRow([
-        formatDate(r.report_date),
-        r.department_name || '',
-        r.activity_name || '',
-        r.activity_description || '',
-        r.location_from || '',
-        r.location_to || '',
-        r.team || '',
-        formatBound(r.status_bound),
-        r.accomplishment != null ? r.accomplishment : '',
-        r.equipment || '',
-        r.operator_name || '',
-        r.crew_names || '',
-        r.remarks || '',
-        formatReviewStatus(r.review_status),
-      ]);
+    // ── Column widths ──
+    const columnWidths = [14, 20, 30, 16, 16, 14, 20, 20, 10, 16, 18, 24, 16];
+    columnWidths.forEach((w, i) => {
+      sheet.getColumn(i + 1).width = w;
+    });
 
-      // Alternate row colors
-      const bgColor = index % 2 === 0 ? 'FFF9FAFB' : 'FFFFFFFF';
-      row.eachCell((cell) => {
+    // ── Data rows (starting at row 3) ──
+    // Helper to format status_bound for display
+    function formatStatusBound(status) {
+      if (status === 'on_going') return 'on going';
+      if (status === 'done') return 'done';
+      if (status === 'pending') return 'pending';
+      return status || '';
+    }
+
+    // Helper to format date as YYYY-MM-DD
+    function formatDateISO(date) {
+      if (!date) return '';
+      const d = new Date(date);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // Helper to detect image extension for exceljs
+    function getImageExtension(filename) {
+      const ext = path.extname(filename).toLowerCase();
+      if (ext === '.png') return 'png';
+      if (ext === '.gif') return 'gif';
+      // Default to jpeg for .jpg, .jpeg, and anything else
+      return 'jpeg';
+    }
+
+    reports.forEach((r, index) => {
+      const rowNumber = index + 3; // data starts at row 3
+      const row = sheet.getRow(rowNumber);
+
+      // Populate cells A through M (columns 1-13)
+      row.getCell(1).value = formatDateISO(r.report_date);       // A: Date
+      row.getCell(2).value = r.activity_name || '';               // B: Activity
+      row.getCell(3).value = r.activity_description || '';        // C: Description
+      row.getCell(4).value = r.location_from || '';               // D: Location From
+      row.getCell(5).value = r.location_to || '';                 // E: Location To
+      row.getCell(6).value = formatStatusBound(r.status_bound);  // F: Status/Bound
+      // G (col 7) and H (col 8) are for embedded images — handled below
+      row.getCell(9).value = r.team || '';                        // I: Team
+      row.getCell(10).value = r.accomplishment != null ? r.accomplishment : ''; // J: Accomplishment
+      row.getCell(11).value = r.equipment || '';                  // K: Equipment
+      row.getCell(12).value = r.crew_names || '';                 // L: Crew Names
+      row.getCell(13).value = r.operator_name || '';              // M: Operator
+
+      // ── Embed photo_before in column G ──
+      if (r.photo_before) {
+        const filePath = path.join(uploadsDir, r.photo_before);
+        if (fs.existsSync(filePath)) {
+          try {
+            const imageId = workbook.addImage({
+              filename: filePath,
+              extension: getImageExtension(r.photo_before),
+            });
+            sheet.addImage(imageId, {
+              tl: { col: 6, row: rowNumber - 1 },   // 0-based: col 6 = G, row rowNumber-1
+              br: { col: 7, row: rowNumber },
+              editAs: 'oneCell',
+            });
+          } catch (imgErr) {
+            console.error(`Failed to embed photo_before for row ${rowNumber}:`, imgErr.message);
+          }
+        }
+      }
+
+      // ── Embed photo_after in column H ──
+      if (r.photo_after) {
+        const filePath = path.join(uploadsDir, r.photo_after);
+        if (fs.existsSync(filePath)) {
+          try {
+            const imageId = workbook.addImage({
+              filename: filePath,
+              extension: getImageExtension(r.photo_after),
+            });
+            sheet.addImage(imageId, {
+              tl: { col: 7, row: rowNumber - 1 },   // 0-based: col 7 = H
+              br: { col: 8, row: rowNumber },
+              editAs: 'oneCell',
+            });
+          } catch (imgErr) {
+            console.error(`Failed to embed photo_after for row ${rowNumber}:`, imgErr.message);
+          }
+        }
+      }
+
+      // Set row height for images
+      row.height = 100;
+
+      // ── Alternate row colors: white and light cream/yellow ──
+      const bgColor = index % 2 === 0 ? 'FFFFFFFF' : 'FFFFFDE7';
+      for (let col = 1; col <= 13; col++) {
+        const cell = row.getCell(col);
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: bgColor },
         };
         cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
           bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
         };
-        cell.alignment = { vertical: 'top', wrapText: true };
+        cell.alignment = { vertical: 'middle', wrapText: true };
         cell.font = { size: 10 };
-      });
-    });
-
-    // Auto-fit column widths
-    const columnWidths = [14, 14, 20, 30, 16, 16, 10, 12, 14, 18, 16, 22, 24, 12];
-    columnWidths.forEach((width, i) => {
-      sheet.getColumn(i + 1).width = width;
+      }
     });
 
     // Set response headers
-    const filename = `accomplishment_summary_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const filename = `accomplishment_report_${new Date().toISOString().split('T')[0]}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
