@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import EmployeeDashboard from './pages/EmployeeDashboard';
@@ -17,19 +18,13 @@ function PrivateRoute({ children, role }) {
   return children;
 }
 
-function HomeRedirect() {
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
-  if (!user) return <Navigate to="/login" />;
-  return user.role === 'admin' ? <Navigate to="/admin" /> : <Navigate to="/dashboard" />;
-}
-
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/" element={<HomeRedirect />} />
         <Route
           path="/dashboard"
           element={

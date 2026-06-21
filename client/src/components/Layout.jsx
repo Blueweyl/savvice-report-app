@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
@@ -14,19 +14,30 @@ export default function Layout({ children }) {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-[#1a1a2e] text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div
-            className="flex items-center gap-3 cursor-pointer"
-            onClick={() => navigate('/')}
-          >
-            <img src="/savvice-logo.png" alt="Savvice" className="h-10 bg-white rounded px-2 py-1" />
-            <div>
-              <h1 className="text-lg font-bold">Routine Maintenance Department</h1>
-              <p className="text-gray-400 text-xs">Report Management System</p>
+          <div className="flex items-center gap-6">
+            <div
+              className="flex items-center gap-3 cursor-pointer"
+              onClick={() => navigate('/')}
+            >
+              <img src="/savvice-logo.png" alt="Savvice" className="h-10 bg-white rounded px-2 py-1" />
+              <div>
+                <h1 className="text-lg font-bold">Routine Maintenance</h1>
+                <p className="text-gray-400 text-xs">Report Management System</p>
+              </div>
             </div>
+            <nav className="hidden md:flex items-center gap-4 ml-4">
+              <Link to="/" className="text-sm text-gray-300 hover:text-white transition">Home</Link>
+              <Link
+                to={user?.role === 'admin' ? '/admin' : '/dashboard'}
+                className="text-sm text-gray-300 hover:text-white transition"
+              >
+                Dashboard
+              </Link>
+            </nav>
           </div>
           {user && (
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-300">
+              <span className="text-sm text-gray-300 hidden md:block">
                 {user.name} ({user.role}) — {user.department_name}
               </span>
               <button
