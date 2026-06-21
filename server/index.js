@@ -29,11 +29,25 @@ app.get('*', (req, res) => {
 
 const initDb = require('./db/init');
 
-initDb().then(() => {
+async function startServer() {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await initDb();
+      console.log('Database initialized on attempt', attempt);
+      break;
+    } catch (err) {
+      console.error(`DB init attempt ${attempt} failed:`, err.message);
+      if (attempt === 5) {
+        console.error('All DB init attempts failed, exiting');
+        process.exit(1);
+      }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
   });
-}).catch((err) => {
-  console.error('DB init failed:', err.message);
-  process.exit(1);
-});
+}
+
+startServer();
