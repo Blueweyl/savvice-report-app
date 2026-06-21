@@ -1,0 +1,21 @@
+databases:
+  - name: savvice-rm-db
+    plan: free
+    databaseName: savvice_rm
+
+services:
+  - type: web
+    name: savvice-report-app
+    runtime: node
+    plan: free
+    buildCommand: npm run install:all && npm run build
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: savvice-rm-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production

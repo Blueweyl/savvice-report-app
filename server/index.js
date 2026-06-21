@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -18,6 +19,12 @@ app.use('/api/departments', departmentRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', name: 'Savvice Routine Maintenance Department API' });
+});
+
+app.use(express.static(path.join(__dirname, '../client/dist')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
