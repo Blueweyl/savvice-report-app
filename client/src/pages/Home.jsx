@@ -1,14 +1,5 @@
 import { Link } from 'react-router-dom';
 
-const SERVICES = [
-  { name: 'Roadway Systems', desc: 'Supporting roadwork developments with safety-compliant products and services', icon: '🛣️' },
-  { name: 'Fleet Management', desc: 'Regular shuttling and logistics services for organizations', icon: '🚛' },
-  { name: 'Roadside Assistance', desc: 'Emergency response and roadside support along expressways', icon: '🚨' },
-  { name: 'Tollways Maintenance', desc: 'Comprehensive maintenance of tollway infrastructure', icon: '🔧' },
-  { name: 'Traffic Auxiliary', desc: 'Ensuring smooth traffic flow along the Expressways and interchanges', icon: '🚦' },
-  { name: 'General Maintenance', desc: 'Facilities maintenance, housekeeping, and allied services', icon: '🏗️' },
-];
-
 const STATS = [
   { value: '1,601+', label: 'Employees' },
   { value: '23+', label: 'Years of Service' },
@@ -30,7 +21,6 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-6">
             <a href="#about" className="text-sm text-gray-300 hover:text-white transition">About</a>
-            <a href="#services" className="text-sm text-gray-300 hover:text-white transition">Services</a>
             <a href="#contact" className="text-sm text-gray-300 hover:text-white transition">Contact</a>
             {user ? (
               <Link
@@ -122,22 +112,6 @@ export default function Home() {
               <strong> Furniture, Bridge, and Roadway</strong> — each handling specific maintenance activities
               to keep our infrastructure safe and operational.
             </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Services */}
-      <section id="services" className="py-16 px-4 bg-white">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-[#1a1a2e] text-center mb-8">Our Services</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {SERVICES.map((service) => (
-              <div key={service.name} className="bg-gray-50 rounded-xl p-6 border border-gray-100 hover:shadow-md transition">
-                <div className="text-3xl mb-3">{service.icon}</div>
-                <h3 className="text-lg font-bold text-[#1a1a2e] mb-2">{service.name}</h3>
-                <p className="text-sm text-gray-600">{service.desc}</p>
-              </div>
-            ))}
           </div>
         </div>
       </section>
