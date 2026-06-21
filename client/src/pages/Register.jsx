@@ -39,13 +39,14 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-[#1a1a2e] flex items-center justify-center px-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-blue-800">
-            Savvice Routine Maintenance Department
+          <img src="/savvice-logo.png" alt="Savvice Corporation" className="h-20 mx-auto mb-4 bg-white rounded-lg px-4 py-2" />
+          <h1 className="text-2xl font-bold text-white">
+            Routine Maintenance Department
           </h1>
-          <p className="text-gray-500 mt-2">Report Management System</p>
+          <p className="text-gray-400 mt-1">Report Management System</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-8">
@@ -111,7 +112,7 @@ export default function Register() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-700 hover:bg-blue-800 text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50"
+              className="w-full bg-[#1e3a8a] hover:bg-[#1e3070] text-white font-medium py-2.5 rounded-lg transition disabled:opacity-50"
             >
               {loading ? 'Registering...' : 'Register'}
             </button>
@@ -119,7 +120,7 @@ export default function Register() {
 
           <p className="text-center text-sm text-gray-500 mt-6">
             Already have an account?{' '}
-            <Link to="/login" className="text-blue-600 hover:underline">
+            <Link to="/login" className="text-[#1e3a8a] hover:underline font-medium">
               Sign in here
             </Link>
           </p>

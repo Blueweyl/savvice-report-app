@@ -87,9 +87,7 @@ export default function NewReport() {
       {/* Header */}
       <div className="bg-white rounded-t-lg border border-gray-200 p-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="bg-blue-900 text-white px-3 py-2 rounded font-bold text-sm tracking-wider">
-            SA WICE
-          </div>
+          <img src="/savvice-logo.png" alt="Savvice" className="h-10" />
           <div>
             <h2 className="text-lg font-bold text-gray-800">
               {deptName || 'Department'} Team Weekly Accomplishment Report
