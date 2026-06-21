@@ -9,10 +9,13 @@ const STATUS_BOUND_LABELS = {
   pending: { label: 'PENDING', color: 'bg-gray-400 text-white' },
 };
 
+const API_BASE = import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`;
+
 export default function ReportDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const token = localStorage.getItem('token');
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -176,7 +179,7 @@ export default function ReportDetail() {
             <div className="text-center">
               <p className="text-xs font-bold text-gray-600 uppercase mb-2">Before</p>
               {report.photo_before ? (
-                <img src={`${import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`}/uploads/${report.photo_before}`}
+                <img src={`${API_BASE}/api/reports/${report.id}/photo/before?token=${token}`}
                   alt="Before" className="rounded-lg border border-gray-200 max-h-64 mx-auto object-contain" />
               ) : (
                 <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-gray-400 text-sm">No photo</div>
@@ -185,7 +188,7 @@ export default function ReportDetail() {
             <div className="text-center">
               <p className="text-xs font-bold text-gray-600 uppercase mb-2">After</p>
               {report.photo_after ? (
-                <img src={`${import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`}/uploads/${report.photo_after}`}
+                <img src={`${API_BASE}/api/reports/${report.id}/photo/after?token=${token}`}
                   alt="After" className="rounded-lg border border-gray-200 max-h-64 mx-auto object-contain" />
               ) : (
                 <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-gray-400 text-sm">No photo</div>

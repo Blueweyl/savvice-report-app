@@ -77,8 +77,8 @@ async function init() {
       operator_name VARCHAR(255),
       crew_names TEXT,
       remarks TEXT,
-      photo_before VARCHAR(500),
-      photo_after VARCHAR(500),
+      photo_before TEXT,
+      photo_after TEXT,
       status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
       admin_comment TEXT,
       reviewed_by INTEGER REFERENCES users(id),
@@ -97,8 +97,8 @@ async function init() {
         col === 'activity_description' ? 'TEXT' :
         col === 'crew_names' ? 'TEXT' :
         col === 'remarks' ? 'TEXT' :
-        col === 'photo_before' ? 'VARCHAR(500)' :
-        col === 'photo_after' ? 'VARCHAR(500)' :
+        col === 'photo_before' ? 'TEXT' :
+        col === 'photo_after' ? 'TEXT' :
         'VARCHAR(255)'
       }`);
     } catch (e) {}
@@ -106,6 +106,10 @@ async function init() {
 
   try { await pool.query('ALTER TABLE reports ALTER COLUMN title DROP NOT NULL'); } catch (e) {}
   try { await pool.query('ALTER TABLE reports ALTER COLUMN body DROP NOT NULL'); } catch (e) {}
+
+  // Migrate photo columns from VARCHAR(500) to TEXT for base64 storage
+  try { await pool.query('ALTER TABLE reports ALTER COLUMN photo_before TYPE TEXT'); } catch (e) {}
+  try { await pool.query('ALTER TABLE reports ALTER COLUMN photo_after TYPE TEXT'); } catch (e) {}
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS attachments (

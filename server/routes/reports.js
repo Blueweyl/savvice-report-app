@@ -1,18 +1,13 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '../uploads'),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, unique + path.extname(file.originalname));
-  },
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -50,8 +45,21 @@ router.post('/', authenticate, upload.fields([
       return res.status(400).json({ error: 'Invalid activity' });
     }
 
-    const photoBefore = req.files?.photo_before?.[0]?.filename || null;
-    const photoAfter = req.files?.photo_after?.[0]?.filename || null;
+    // Convert uploaded file buffers to base64 data URI strings
+    let photoBefore = null;
+    if (req.files?.photo_before?.[0]) {
+      const file = req.files.photo_before[0];
+      const base64 = file.buffer.toString('base64');
+      const ext = file.mimetype.split('/')[1] || 'jpeg';
+      photoBefore = `data:image/${ext};base64,${base64}`;
+    }
+    let photoAfter = null;
+    if (req.files?.photo_after?.[0]) {
+      const file = req.files.photo_after[0];
+      const base64 = file.buffer.toString('base64');
+      const ext = file.mimetype.split('/')[1] || 'jpeg';
+      photoAfter = `data:image/${ext};base64,${base64}`;
+    }
 
     const result = await pool.query(
       `INSERT INTO reports (
@@ -182,6 +190,75 @@ router.patch('/:id/review', authenticate, requireAdmin, async (req, res) => {
     }
 
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve photo from database - supports ?token= query param for auth
+router.get('/:id/photo/:type', (req, res, next) => {
+  // Authenticate via Authorization header or ?token= query param
+  let token = null;
+  const header = req.headers.authorization;
+  if (header && header.startsWith('Bearer ')) {
+    token = header.split(' ')[1];
+  }
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}, async (req, res) => {
+  try {
+    const { id, type } = req.params;
+    if (type !== 'before' && type !== 'after') {
+      return res.status(400).json({ error: 'Type must be "before" or "after"' });
+    }
+
+    const column = type === 'before' ? 'photo_before' : 'photo_after';
+    const result = await pool.query(
+      `SELECT ${column}, author_id FROM reports WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const report = result.rows[0];
+
+    // Access control: admin can see all, employees only their own
+    if (req.user.role !== 'admin' && report.author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const dataUri = report[column];
+    if (!dataUri || !dataUri.startsWith('data:')) {
+      return res.status(404).json({ error: 'No photo found' });
+    }
+
+    // Parse data URI: data:image/jpeg;base64,/9j/4AAQ...
+    const matches = dataUri.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+    if (!matches) {
+      return res.status(500).json({ error: 'Invalid photo data' });
+    }
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    res.set('Content-Type', mimeType);
+    res.set('Content-Length', buffer.length);
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

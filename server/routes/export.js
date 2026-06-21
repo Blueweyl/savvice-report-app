@@ -4,7 +4,6 @@ const PDFDocument = require('pdfkit');
 const pool = require('../db/pool');
 const jwt = require('jsonwebtoken');
 const path = require('path');
-const fs = require('fs');
 
 const router = express.Router();
 
@@ -116,7 +115,7 @@ router.get('/excel', authenticateExport, async (req, res) => {
       pageSetup: { orientation: 'landscape', paperSize: 9 },
     });
 
-    const uploadsDir = path.join(__dirname, '../uploads/');
+    // No longer using filesystem uploads — photos are base64 data URIs in the database
 
     // ── Row 1: Merged title header (A1:M1) ──
     sheet.mergeCells('A1:M1');
@@ -199,13 +198,13 @@ router.get('/excel', authenticateExport, async (req, res) => {
       return `${yyyy}-${mm}-${dd}`;
     }
 
-    // Helper to detect image extension for exceljs
-    function getImageExtension(filename) {
-      const ext = path.extname(filename).toLowerCase();
-      if (ext === '.png') return 'png';
-      if (ext === '.gif') return 'gif';
-      // Default to jpeg for .jpg, .jpeg, and anything else
-      return 'jpeg';
+    // Parse a data URI and return { base64, extension } for exceljs
+    function parseDataUri(dataUri) {
+      const match = dataUri.match(/^data:image\/([a-zA-Z+]+);base64,(.+)$/);
+      if (!match) return null;
+      let ext = match[1].toLowerCase();
+      if (ext === 'jpg') ext = 'jpeg';
+      return { base64: match[2], extension: ext };
     }
 
     reports.forEach((r, index) => {
@@ -227,13 +226,13 @@ router.get('/excel', authenticateExport, async (req, res) => {
       row.getCell(13).value = r.operator_name || '';              // M: Operator
 
       // ── Embed photo_before in column G ──
-      if (r.photo_before) {
-        const filePath = path.join(uploadsDir, r.photo_before);
-        if (fs.existsSync(filePath)) {
+      if (r.photo_before && r.photo_before.startsWith('data:')) {
+        const parsed = parseDataUri(r.photo_before);
+        if (parsed) {
           try {
             const imageId = workbook.addImage({
-              filename: filePath,
-              extension: getImageExtension(r.photo_before),
+              base64: parsed.base64,
+              extension: parsed.extension,
             });
             sheet.addImage(imageId, {
               tl: { col: 6, row: rowNumber - 1 },   // 0-based: col 6 = G, row rowNumber-1
@@ -247,13 +246,13 @@ router.get('/excel', authenticateExport, async (req, res) => {
       }
 
       // ── Embed photo_after in column H ──
-      if (r.photo_after) {
-        const filePath = path.join(uploadsDir, r.photo_after);
-        if (fs.existsSync(filePath)) {
+      if (r.photo_after && r.photo_after.startsWith('data:')) {
+        const parsed = parseDataUri(r.photo_after);
+        if (parsed) {
           try {
             const imageId = workbook.addImage({
-              filename: filePath,
-              extension: getImageExtension(r.photo_after),
+              base64: parsed.base64,
+              extension: parsed.extension,
             });
             sheet.addImage(imageId, {
               tl: { col: 7, row: rowNumber - 1 },   // 0-based: col 7 = H
