@@ -206,7 +206,7 @@ router.get('/my', authenticate, async (req, res) => {
 
 router.get('/all', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { department_id, status, activity_id } = req.query;
+    const { department_id, status, activity_id, date_from, date_to } = req.query;
     let query = `
       SELECT r.*, a.name as activity_name, d.name as department_name, u.name as author_name,
              rv.name as reviewer_name
@@ -230,6 +230,14 @@ router.get('/all', authenticate, requireAdmin, async (req, res) => {
     if (activity_id) {
       params.push(activity_id);
       query += ` AND r.activity_id = $${params.length}`;
+    }
+    if (date_from) {
+      params.push(date_from);
+      query += ` AND r.report_date >= $${params.length}`;
+    }
+    if (date_to) {
+      params.push(date_to);
+      query += ` AND r.report_date <= $${params.length}`;
     }
 
     query += ' ORDER BY r.created_at DESC';

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../api';
 
 const API_BASE = import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`;
@@ -9,6 +10,7 @@ export default function Summary() {
   const [dateTo, setDateTo] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [summary, setSummary] = useState(null);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -25,8 +27,12 @@ export default function Summary() {
       if (dateTo) params.set('date_to', dateTo);
       if (departmentId) params.set('department_id', departmentId);
 
-      const res = await api.get(`/reports/summary?${params.toString()}`);
-      setSummary(res.data);
+      const [summaryRes, reportsRes] = await Promise.all([
+        api.get(`/reports/summary?${params.toString()}`),
+        api.get(`/reports/all?${params.toString()}`).catch(() => ({ data: [] })),
+      ]);
+      setSummary(summaryRes.data);
+      setReports(reportsRes.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load summary');
     } finally {
@@ -262,6 +268,61 @@ export default function Summary() {
               </tbody>
             </table>
           </div>
+
+          {/* Before & After Photos */}
+          {reports.filter(r => r.photo_before || r.photo_after).length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-6">
+              <div className="bg-[#1e3a8a] text-white px-4 py-2 font-semibold text-sm flex items-center gap-2">
+                <span>📷</span> Before & After Photos
+              </div>
+              <div className="p-4 space-y-4">
+                {reports.filter(r => r.photo_before || r.photo_after).map((report) => {
+                  const token = localStorage.getItem('token');
+                  return (
+                    <div key={report.id} className="border border-gray-100 rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <Link to={`/reports/${report.id}`} className="text-sm font-bold text-[#1e3a8a] hover:underline">
+                            {report.activity_name}
+                          </Link>
+                          <p className="text-xs text-gray-500">
+                            {report.department_name} — {report.team || 'No team'} — {report.report_date ? new Date(report.report_date).toLocaleDateString() : ''}
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-400">{report.author_name}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="text-center">
+                          <p className="text-xs font-bold text-gray-500 uppercase mb-1">Before</p>
+                          {report.photo_before ? (
+                            <img
+                              src={`${API_BASE}/api/reports/${report.id}/photo/before?token=${token}`}
+                              alt="Before"
+                              className="rounded-lg border border-gray-200 max-h-48 mx-auto object-contain"
+                            />
+                          ) : (
+                            <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-gray-300 text-sm">No photo</div>
+                          )}
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs font-bold text-gray-500 uppercase mb-1">After</p>
+                          {report.photo_after ? (
+                            <img
+                              src={`${API_BASE}/api/reports/${report.id}/photo/after?token=${token}`}
+                              alt="After"
+                              className="rounded-lg border border-gray-200 max-h-48 mx-auto object-contain"
+                            />
+                          ) : (
+                            <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-gray-300 text-sm">No photo</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Daily Breakdown Chart */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-6">
