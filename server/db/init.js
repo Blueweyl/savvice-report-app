@@ -75,6 +75,10 @@ async function init() {
       accomplishment DECIMAL(10,2) DEFAULT 0,
       equipment VARCHAR(255),
       operator_name VARCHAR(255),
+      crew_names TEXT,
+      remarks TEXT,
+      photo_before VARCHAR(500),
+      photo_after VARCHAR(500),
       status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
       admin_comment TEXT,
       reviewed_by INTEGER REFERENCES users(id),
@@ -83,7 +87,7 @@ async function init() {
     );
   `);
 
-  const cols = ['report_date', 'team', 'status_bound', 'activity_description', 'location_from', 'location_to', 'accomplishment', 'equipment', 'operator_name'];
+  const cols = ['report_date', 'team', 'status_bound', 'activity_description', 'location_from', 'location_to', 'accomplishment', 'equipment', 'operator_name', 'crew_names', 'remarks', 'photo_before', 'photo_after'];
   for (const col of cols) {
     try {
       await pool.query(`ALTER TABLE reports ADD COLUMN IF NOT EXISTS ${col} ${
@@ -91,6 +95,10 @@ async function init() {
         col === 'accomplishment' ? 'DECIMAL(10,2) DEFAULT 0' :
         col === 'status_bound' ? "VARCHAR(20) DEFAULT 'on_going'" :
         col === 'activity_description' ? 'TEXT' :
+        col === 'crew_names' ? 'TEXT' :
+        col === 'remarks' ? 'TEXT' :
+        col === 'photo_before' ? 'VARCHAR(500)' :
+        col === 'photo_after' ? 'VARCHAR(500)' :
         'VARCHAR(255)'
       }`);
     } catch (e) {}

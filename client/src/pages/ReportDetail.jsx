@@ -147,6 +147,54 @@ export default function ReportDetail() {
         </div>
       </div>
 
+      {/* MANPOWER + CREW NAMES */}
+      {(report.crew_names || report.remarks) && (
+        <div className="border-x border-gray-200">
+          <div className="bg-blue-800 text-white px-6 py-3 font-bold text-sm flex items-center gap-2">
+            <span>👥</span> MANPOWER + CREW NAMES
+          </div>
+          <div className="p-6 bg-white grid grid-cols-2 gap-6">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Crew Names</label>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap">{report.crew_names || '—'}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Remarks</label>
+              <p className="text-sm text-gray-800">{report.remarks || '—'}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BEFORE & AFTER PHOTOS */}
+      {(report.photo_before || report.photo_after) && (
+        <div className="border-x border-gray-200">
+          <div className="bg-blue-800 text-white px-6 py-3 font-bold text-sm flex items-center gap-2">
+            <span>📷</span> BEFORE & AFTER PHOTOS
+          </div>
+          <div className="p-6 bg-white grid grid-cols-2 gap-6">
+            <div className="text-center">
+              <p className="text-xs font-bold text-gray-600 uppercase mb-2">Before</p>
+              {report.photo_before ? (
+                <img src={`${import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`}/uploads/${report.photo_before}`}
+                  alt="Before" className="rounded-lg border border-gray-200 max-h-64 mx-auto object-contain" />
+              ) : (
+                <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-gray-400 text-sm">No photo</div>
+              )}
+            </div>
+            <div className="text-center">
+              <p className="text-xs font-bold text-gray-600 uppercase mb-2">After</p>
+              {report.photo_after ? (
+                <img src={`${import.meta.env.PROD ? '' : `http://${window.location.hostname}:3001`}/uploads/${report.photo_after}`}
+                  alt="After" className="rounded-lg border border-gray-200 max-h-64 mx-auto object-contain" />
+              ) : (
+                <div className="border-2 border-dashed border-gray-200 rounded-lg p-8 text-gray-400 text-sm">No photo</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Admin Comment */}
       {report.admin_comment && (
         <div className="border-x border-gray-200">

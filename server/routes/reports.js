@@ -1,15 +1,40 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
 const pool = require('../db/pool');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/', authenticate, async (req, res) => {
+const storage = multer.diskStorage({
+  destination: path.join(__dirname, '../uploads'),
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, unique + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png|gif|webp/;
+    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+    const mime = allowed.test(file.mimetype);
+    cb(null, ext && mime);
+  },
+});
+
+router.post('/', authenticate, upload.fields([
+  { name: 'photo_before', maxCount: 1 },
+  { name: 'photo_after', maxCount: 1 },
+]), async (req, res) => {
   try {
     const {
       activity_id, report_date, team, status_bound,
       activity_description, location_from, location_to,
-      accomplishment, equipment, operator_name
+      accomplishment, equipment, operator_name,
+      crew_names, remarks
     } = req.body;
 
     if (!activity_id || !report_date) {
@@ -25,18 +50,23 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Invalid activity' });
     }
 
+    const photoBefore = req.files?.photo_before?.[0]?.filename || null;
+    const photoAfter = req.files?.photo_after?.[0]?.filename || null;
+
     const result = await pool.query(
       `INSERT INTO reports (
         author_id, department_id, activity_id, report_date, team, status_bound,
         activity_description, location_from, location_to,
-        accomplishment, equipment, operator_name
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        accomplishment, equipment, operator_name,
+        crew_names, remarks, photo_before, photo_after
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
-        req.user.id, activity.rows[0].department_id, activity_id,
+        req.user.id, activity.rows[0].department_id, parseInt(activity_id),
         report_date, team || null, status_bound || 'on_going',
         activity_description || null, location_from || null, location_to || null,
-        accomplishment || 0, equipment || null, operator_name || null
+        parseFloat(accomplishment) || 0, equipment || null, operator_name || null,
+        crew_names || null, remarks || null, photoBefore, photoAfter
       ]
     );
 
