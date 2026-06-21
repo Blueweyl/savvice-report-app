@@ -104,6 +104,9 @@ async function init() {
     } catch (e) {}
   }
 
+  try { await pool.query('ALTER TABLE reports ALTER COLUMN title DROP NOT NULL'); } catch (e) {}
+  try { await pool.query('ALTER TABLE reports ALTER COLUMN body DROP NOT NULL'); } catch (e) {}
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS attachments (
       id SERIAL PRIMARY KEY,
