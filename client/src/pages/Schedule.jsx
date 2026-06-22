@@ -48,13 +48,13 @@ export default function Schedule() {
   const [savingTargets, setSavingTargets] = useState(false);
   const [targetMessage, setTargetMessage] = useState({ type: '', text: '' });
 
-  // Manual accomplishment state
+  // Manual accomplishment state (spreadsheet grid)
   const [accomYear, setAccomYear] = useState(new Date().getFullYear());
   const [accomDeptId, setAccomDeptId] = useState('');
-  const [accomActivities, setAccomActivities] = useState([]);
-  const [accomActivityId, setAccomActivityId] = useState('');
-  const [monthlyAccomplishments, setMonthlyAccomplishments] = useState(Array(12).fill(''));
-  const [accomTargetRef, setAccomTargetRef] = useState(Array(12).fill(0));
+  const [gridActivities, setGridActivities] = useState([]); // list of activities for the department
+  const [gridData, setGridData] = useState({}); // { [activityId]: { targets: [12], accomplishments: [12] } }
+  const [gridLoaded, setGridLoaded] = useState(false);
+  const [loadingGrid, setLoadingGrid] = useState(false);
   const [savingAccom, setSavingAccom] = useState(false);
   const [accomMessage, setAccomMessage] = useState({ type: '', text: '' });
 
@@ -97,46 +97,65 @@ export default function Schedule() {
     }
   }, [targetActivityId, targetYear, targetDeptId]);
 
-  // Load activities when accomplishment department changes
+  // Reset grid when department changes
   useEffect(() => {
-    if (accomDeptId) {
-      api.get(`/departments/${accomDeptId}/activities`).then(res => setAccomActivities(res.data)).catch(() => {});
-    } else {
-      setAccomActivities([]);
-    }
-    setAccomActivityId('');
-    setMonthlyAccomplishments(Array(12).fill(''));
-    setAccomTargetRef(Array(12).fill(0));
-  }, [accomDeptId]);
+    setGridData({});
+    setGridActivities([]);
+    setGridLoaded(false);
+  }, [accomDeptId, accomYear]);
 
-  // Load existing manual accomplishments and target reference when activity is selected
-  useEffect(() => {
-    if (accomActivityId && accomYear && accomDeptId) {
-      // Load existing manual accomplishments
-      api.get(`/schedule/accomplishments?year=${accomYear}&department_id=${accomDeptId}`)
-        .then(res => {
-          const existing = res.data.filter(a => a.activity_id === parseInt(accomActivityId));
-          const newAccom = Array(12).fill('');
-          existing.forEach(a => {
-            newAccom[a.month - 1] = a.accomplishment_value ? String(parseFloat(a.accomplishment_value)) : '';
-          });
-          setMonthlyAccomplishments(newAccom);
-        })
-        .catch(() => {});
-
-      // Load target values for reference
-      api.get(`/schedule/targets?year=${accomYear}&department_id=${accomDeptId}`)
-        .then(res => {
-          const existing = res.data.filter(t => t.activity_id === parseInt(accomActivityId));
-          const newRef = Array(12).fill(0);
-          existing.forEach(t => {
-            newRef[t.month - 1] = parseFloat(t.target_value) || 0;
-          });
-          setAccomTargetRef(newRef);
-        })
-        .catch(() => {});
+  // Load all activities with targets and accomplishments for the grid
+  const handleLoadGrid = async () => {
+    if (!accomDeptId || !accomYear) {
+      setAccomMessage({ type: 'error', text: 'Please select both year and department' });
+      return;
     }
-  }, [accomActivityId, accomYear, accomDeptId]);
+
+    setLoadingGrid(true);
+    setAccomMessage({ type: '', text: '' });
+
+    try {
+      // Fetch activities, targets, and accomplishments in parallel
+      const [activitiesRes, targetsRes, accomRes] = await Promise.all([
+        api.get(`/departments/${accomDeptId}/activities`),
+        api.get(`/schedule/targets?year=${accomYear}&department_id=${accomDeptId}`),
+        api.get(`/schedule/accomplishments?year=${accomYear}&department_id=${accomDeptId}`)
+      ]);
+
+      const acts = activitiesRes.data;
+      setGridActivities(acts);
+
+      // Build grid data keyed by activity_id
+      const data = {};
+      acts.forEach(a => {
+        data[a.id] = {
+          targets: Array(12).fill(0),
+          accomplishments: Array(12).fill('')
+        };
+      });
+
+      // Fill in targets
+      targetsRes.data.forEach(t => {
+        if (data[t.activity_id]) {
+          data[t.activity_id].targets[t.month - 1] = parseFloat(t.target_value) || 0;
+        }
+      });
+
+      // Fill in accomplishments
+      accomRes.data.forEach(a => {
+        if (data[a.activity_id]) {
+          data[a.activity_id].accomplishments[a.month - 1] = a.accomplishment_value ? String(parseFloat(a.accomplishment_value)) : '';
+        }
+      });
+
+      setGridData(data);
+      setGridLoaded(true);
+    } catch (err) {
+      setAccomMessage({ type: 'error', text: err.response?.data?.error || 'Failed to load data' });
+    } finally {
+      setLoadingGrid(false);
+    }
+  };
 
   const handleSaveTargets = async () => {
     if (!targetYear || !targetActivityId) {
@@ -168,8 +187,8 @@ export default function Schedule() {
   };
 
   const handleSaveAccomplishments = async () => {
-    if (!accomYear || !accomActivityId) {
-      setAccomMessage({ type: 'error', text: 'Please select year and activity' });
+    if (!accomYear || !accomDeptId || gridActivities.length === 0) {
+      setAccomMessage({ type: 'error', text: 'Please load a department first' });
       return;
     }
 
@@ -177,18 +196,25 @@ export default function Schedule() {
     setAccomMessage({ type: '', text: '' });
 
     try {
-      const accomplishments = monthlyAccomplishments.map((val, i) => ({
-        month: i + 1,
-        accomplishment_value: parseFloat(val) || 0
-      }));
+      // Save all activities that have any accomplishment values
+      const savePromises = gridActivities.map(activity => {
+        const row = gridData[activity.id];
+        if (!row) return null;
 
-      await api.post('/schedule/accomplishments', {
-        year: accomYear,
-        activity_id: parseInt(accomActivityId),
-        accomplishments
-      });
+        const accomplishments = row.accomplishments.map((val, i) => ({
+          month: i + 1,
+          accomplishment_value: parseFloat(val) || 0
+        }));
 
-      setAccomMessage({ type: 'success', text: 'Accomplishments saved successfully!' });
+        return api.post('/schedule/accomplishments', {
+          year: accomYear,
+          activity_id: activity.id,
+          accomplishments
+        });
+      }).filter(Boolean);
+
+      await Promise.all(savePromises);
+      setAccomMessage({ type: 'success', text: `All accomplishments saved successfully! (${savePromises.length} activities)` });
     } catch (err) {
       setAccomMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save accomplishments' });
     } finally {
@@ -217,8 +243,33 @@ export default function Schedule() {
   }, [overviewYear, overviewDeptId]);
 
   const annualTotal = monthlyTargets.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
-  const annualAccomTotal = monthlyAccomplishments.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
-  const annualTargetRefTotal = accomTargetRef.reduce((sum, v) => sum + v, 0);
+
+  // Helper to update a single cell in the grid
+  const updateGridCell = (activityId, monthIndex, value) => {
+    setGridData(prev => {
+      const updated = { ...prev };
+      const row = { ...updated[activityId] };
+      const accomplishments = [...row.accomplishments];
+      accomplishments[monthIndex] = value;
+      row.accomplishments = accomplishments;
+      updated[activityId] = row;
+      return updated;
+    });
+  };
+
+  // Compute annual total for a single activity row
+  const getRowTotal = (activityId) => {
+    const row = gridData[activityId];
+    if (!row) return 0;
+    return row.accomplishments.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+  };
+
+  // Compute annual target total for a single activity row
+  const getRowTargetTotal = (activityId) => {
+    const row = gridData[activityId];
+    if (!row) return 0;
+    return row.targets.reduce((sum, v) => sum + v, 0);
+  };
 
   return (
     <div>
@@ -363,13 +414,13 @@ export default function Schedule() {
       {/* ========== MANUAL ACCOMPLISHMENT TAB (Admin Only) ========== */}
       {activeTab === 'accomplishments' && isAdmin && (
         <div>
+          {/* Selectors */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-6">
             <div className="bg-[#1e3a8a] text-white px-4 py-2 font-semibold text-sm">
-              Manual Accomplishment Entry
+              Manual Accomplishment Entry — Spreadsheet View
             </div>
             <div className="p-6">
-              {/* Selectors */}
-              <div className="flex flex-wrap gap-4 items-end mb-6">
+              <div className="flex flex-wrap gap-4 items-end">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
                   <select
@@ -391,76 +442,123 @@ export default function Schedule() {
                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
-                  <select
-                    value={accomActivityId}
-                    onChange={e => setAccomActivityId(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm min-w-[220px]"
-                    disabled={!accomDeptId}
-                  >
-                    <option value="">Select Activity</option>
-                    {accomActivities.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                </div>
+                <button
+                  onClick={handleLoadGrid}
+                  disabled={loadingGrid || !accomDeptId}
+                  className="bg-[#1e3a8a] hover:bg-[#1a1a2e] text-white px-6 py-2 rounded-lg text-sm font-bold transition disabled:opacity-50"
+                >
+                  {loadingGrid ? 'Loading...' : 'Load'}
+                </button>
               </div>
-
-              {/* Monthly Accomplishment Grid */}
-              {accomActivityId && (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
-                    {MONTH_NAMES.map((month, i) => (
-                      <div key={month} className="border border-gray-200 rounded-lg p-3">
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">{month}</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={monthlyAccomplishments[i]}
-                          onChange={e => {
-                            const updated = [...monthlyAccomplishments];
-                            updated[i] = e.target.value;
-                            setMonthlyAccomplishments(updated);
-                          }}
-                          placeholder="0.00"
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                        />
-                        <div className="text-xs text-gray-400 mt-1">
-                          Target: {formatNumber(accomTargetRef[i])}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 mb-4">
-                    <div className="text-sm text-gray-600">
-                      Annual Total: <span className="font-bold text-[#1e3a8a] text-lg">{formatNumber(annualAccomTotal)}</span>
-                      <span className="text-gray-400 ml-3">
-                        (Target: {formatNumber(annualTargetRefTotal)})
-                      </span>
-                    </div>
-                    <button
-                      onClick={handleSaveAccomplishments}
-                      disabled={savingAccom}
-                      className="bg-[#f59e0b] hover:bg-[#d97706] text-black px-6 py-2 rounded-lg text-sm font-bold transition disabled:opacity-50"
-                    >
-                      {savingAccom ? 'Saving...' : 'Save Accomplishments'}
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {accomMessage.text && (
-                <div className={`px-4 py-3 rounded-lg text-sm ${
-                  accomMessage.type === 'success'
-                    ? 'bg-green-50 border border-green-200 text-green-700'
-                    : 'bg-red-50 border border-red-200 text-red-700'
-                }`}>
-                  {accomMessage.text}
-                </div>
-              )}
             </div>
           </div>
+
+          {/* Message */}
+          {accomMessage.text && (
+            <div className={`px-4 py-3 rounded-lg text-sm mb-6 ${
+              accomMessage.type === 'success'
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}>
+              {accomMessage.text}
+            </div>
+          )}
+
+          {/* Empty state before loading */}
+          {!gridLoaded && !loadingGrid && (
+            <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <p className="text-gray-500">Select a year and department, then click "Load" to view the spreadsheet.</p>
+            </div>
+          )}
+
+          {/* Spreadsheet Grid */}
+          {gridLoaded && gridActivities.length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-6">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse" style={{ minWidth: '1100px' }}>
+                  <thead>
+                    <tr className="bg-[#1e3a8a] text-white">
+                      <th className="text-left px-3 py-2 text-xs font-semibold sticky left-0 bg-[#1e3a8a] z-10 min-w-[180px] border-r border-blue-700">
+                        Activity
+                      </th>
+                      {MONTH_SHORT.map(m => (
+                        <th key={m} className="text-center px-1 py-2 text-xs font-semibold" style={{ width: '70px' }}>
+                          {m}
+                        </th>
+                      ))}
+                      <th className="text-center px-2 py-2 text-xs font-semibold border-l border-blue-700" style={{ width: '90px' }}>
+                        Annual Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gridActivities.map((activity, rowIdx) => {
+                      const row = gridData[activity.id];
+                      if (!row) return null;
+                      const rowTotal = getRowTotal(activity.id);
+                      const rowTargetTotal = getRowTargetTotal(activity.id);
+
+                      return (
+                        <tr
+                          key={activity.id}
+                          className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+                        >
+                          <td className={`px-3 py-2 text-xs font-semibold text-gray-800 sticky left-0 z-10 border-r border-gray-200 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                            {activity.name}
+                          </td>
+                          {MONTH_SHORT.map((_, monthIdx) => (
+                            <td key={monthIdx} className="px-1 py-1 text-center border-l border-gray-100">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={row.accomplishments[monthIdx]}
+                                onChange={e => updateGridCell(activity.id, monthIdx, e.target.value)}
+                                placeholder="0"
+                                className="w-full border border-gray-200 rounded px-1 py-1 text-xs text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                style={{ width: '62px' }}
+                              />
+                              <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+                                T: {formatNumber(row.targets[monthIdx])}
+                              </div>
+                            </td>
+                          ))}
+                          <td className="px-2 py-2 text-center border-l border-gray-200">
+                            <div className="text-xs font-bold text-[#1e3a8a]">{formatNumber(rowTotal)}</div>
+                            <div className="text-[10px] text-gray-400 leading-tight">T: {formatNumber(rowTargetTotal)}</div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Save All Button */}
+              <div className="flex items-center justify-between bg-gray-50 border-t border-gray-200 px-4 py-3">
+                <div className="text-sm text-gray-600">
+                  {gridActivities.length} activities loaded
+                </div>
+                <button
+                  onClick={handleSaveAccomplishments}
+                  disabled={savingAccom}
+                  className="bg-[#f59e0b] hover:bg-[#d97706] text-black px-6 py-2 rounded-lg text-sm font-bold transition disabled:opacity-50"
+                >
+                  {savingAccom ? 'Saving All...' : 'Save All'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* No activities state */}
+          {gridLoaded && gridActivities.length === 0 && (
+            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+              <p className="text-gray-500 text-sm">No activities found for this department.</p>
+            </div>
+          )}
         </div>
       )}
 
