@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const reportRoutes = require('./routes/reports');
 const departmentRoutes = require('./routes/departments');
 const exportRoutes = require('./routes/export');
+const scheduleRoutes = require('./routes/schedule');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -20,6 +21,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/schedule', scheduleRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', name: 'Savvice Routine Maintenance Department API' });

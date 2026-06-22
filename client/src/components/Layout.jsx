@@ -36,6 +36,9 @@ export default function Layout({ children }) {
               <Link to="/summary" className="text-sm text-gray-300 hover:text-white transition">
                 Summary
               </Link>
+              <Link to="/schedule" className="text-sm text-gray-300 hover:text-white transition">
+                Schedule
+              </Link>
             </nav>
           </div>
           {user && (
