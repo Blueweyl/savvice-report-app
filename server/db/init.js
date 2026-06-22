@@ -148,6 +148,20 @@ async function init() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_accomplishments (
+      id SERIAL PRIMARY KEY,
+      activity_id INTEGER REFERENCES activities(id),
+      department_id INTEGER REFERENCES departments(id),
+      accomplishment_date DATE NOT NULL,
+      target_value DECIMAL(10,2) DEFAULT 0,
+      accomplishment_value DECIMAL(10,2) DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(activity_id, accomplishment_date)
+    );
+  `);
+
   for (const dept of DEPARTMENTS) {
     const res = await pool.query(
       'INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = $1 RETURNING id',

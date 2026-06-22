@@ -292,4 +292,104 @@ router.get('/overview', authenticate, async (req, res) => {
   }
 });
 
+// GET /api/schedule/daily?year=2026&month=6&activity_id=1
+router.get('/daily', authenticate, async (req, res) => {
+  try {
+    const { year, month, activity_id } = req.query;
+    if (!year || !month || !activity_id) {
+      return res.status(400).json({ error: 'year, month, and activity_id are required' });
+    }
+
+    // Build the first and last day of the month
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const result = await pool.query(`
+      SELECT id, accomplishment_date, target_value, accomplishment_value
+      FROM daily_accomplishments
+      WHERE activity_id = $1
+        AND accomplishment_date >= $2
+        AND accomplishment_date <= $3
+      ORDER BY accomplishment_date
+    `, [activity_id, startDate, endDate]);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/schedule/daily (admin only)
+router.post('/daily', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { activity_id, entries } = req.body;
+
+    if (!activity_id || !Array.isArray(entries)) {
+      return res.status(400).json({ error: 'activity_id and entries array are required' });
+    }
+
+    // Look up department_id from the activity
+    const actResult = await pool.query('SELECT department_id FROM activities WHERE id = $1', [activity_id]);
+    if (actResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+    const department_id = actResult.rows[0].department_id;
+
+    const results = [];
+    for (const entry of entries) {
+      if (!entry.date) continue;
+      const targetValue = parseFloat(entry.target_value) || 0;
+      const accomplishmentValue = parseFloat(entry.accomplishment_value) || 0;
+
+      const result = await pool.query(`
+        INSERT INTO daily_accomplishments (activity_id, department_id, accomplishment_date, target_value, accomplishment_value)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (activity_id, accomplishment_date)
+        DO UPDATE SET target_value = $4, accomplishment_value = $5, department_id = $2, updated_at = NOW()
+        RETURNING *
+      `, [activity_id, department_id, entry.date, targetValue, accomplishmentValue]);
+
+      results.push(result.rows[0]);
+    }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/schedule/daily-summary?year=2026&month=6&department_id=1
+router.get('/daily-summary', authenticate, async (req, res) => {
+  try {
+    const { year, month, department_id } = req.query;
+    if (!year || !month || !department_id) {
+      return res.status(400).json({ error: 'year, month, and department_id are required' });
+    }
+
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const result = await pool.query(`
+      SELECT a.name as activity_name,
+             COALESCE(SUM(da.target_value), 0) as total_target,
+             COALESCE(SUM(da.accomplishment_value), 0) as total_accomplishment,
+             COUNT(da.id) as day_count
+      FROM activities a
+      LEFT JOIN daily_accomplishments da
+        ON da.activity_id = a.id
+        AND da.accomplishment_date >= $2
+        AND da.accomplishment_date <= $3
+      WHERE a.department_id = $1
+      GROUP BY a.id, a.name
+      ORDER BY a.name
+    `, [department_id, startDate, endDate]);
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

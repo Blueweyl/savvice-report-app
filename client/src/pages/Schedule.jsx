@@ -66,6 +66,18 @@ export default function Schedule() {
   const [overviewError, setOverviewError] = useState('');
   const [expandedActivity, setExpandedActivity] = useState(null);
 
+  // Daily input state
+  const [dailyYear, setDailyYear] = useState(new Date().getFullYear());
+  const [dailyMonth, setDailyMonth] = useState(new Date().getMonth() + 1);
+  const [dailyDeptId, setDailyDeptId] = useState('');
+  const [dailyActivities, setDailyActivities] = useState([]);
+  const [dailyActivityId, setDailyActivityId] = useState('');
+  const [dailyRows, setDailyRows] = useState([]);
+  const [dailyLoaded, setDailyLoaded] = useState(false);
+  const [loadingDaily, setLoadingDaily] = useState(false);
+  const [savingDaily, setSavingDaily] = useState(false);
+  const [dailyMessage, setDailyMessage] = useState({ type: '', text: '' });
+
   useEffect(() => {
     api.get('/departments').then(res => setDepartments(res.data)).catch(() => {});
   }, []);
@@ -242,6 +254,119 @@ export default function Schedule() {
     }
   }, [overviewYear, overviewDeptId]);
 
+  // Load activities when daily department changes
+  useEffect(() => {
+    if (dailyDeptId) {
+      api.get(`/departments/${dailyDeptId}/activities`).then(res => setDailyActivities(res.data)).catch(() => {});
+    } else {
+      setDailyActivities([]);
+    }
+    setDailyActivityId('');
+    setDailyRows([]);
+    setDailyLoaded(false);
+  }, [dailyDeptId]);
+
+  // Reset daily grid when activity/month/year changes
+  useEffect(() => {
+    setDailyRows([]);
+    setDailyLoaded(false);
+  }, [dailyActivityId, dailyMonth, dailyYear]);
+
+  // Generate days for a given month/year and load existing data
+  const handleLoadDaily = async () => {
+    if (!dailyActivityId || !dailyYear || !dailyMonth) {
+      setDailyMessage({ type: 'error', text: 'Please select year, month, department, and activity' });
+      return;
+    }
+
+    setLoadingDaily(true);
+    setDailyMessage({ type: '', text: '' });
+
+    try {
+      // Fetch existing daily entries
+      const res = await api.get(`/schedule/daily?year=${dailyYear}&month=${dailyMonth}&activity_id=${dailyActivityId}`);
+      const existingMap = {};
+      res.data.forEach(entry => {
+        const dateStr = entry.accomplishment_date.split('T')[0];
+        existingMap[dateStr] = {
+          target_value: entry.target_value ? String(parseFloat(entry.target_value)) : '',
+          accomplishment_value: entry.accomplishment_value ? String(parseFloat(entry.accomplishment_value)) : ''
+        };
+      });
+
+      // Generate all days in the month
+      const daysInMonth = new Date(dailyYear, dailyMonth, 0).getDate();
+      const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const rows = [];
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateObj = new Date(dailyYear, dailyMonth - 1, d);
+        const dateStr = `${dailyYear}-${String(dailyMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dayOfWeek = dateObj.getDay(); // 0=Sun, 6=Sat
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const existing = existingMap[dateStr];
+
+        rows.push({
+          day: d,
+          date: dateStr,
+          dayName: DAY_NAMES[dayOfWeek],
+          isWeekend,
+          target_value: existing ? existing.target_value : '',
+          accomplishment_value: existing ? existing.accomplishment_value : ''
+        });
+      }
+
+      setDailyRows(rows);
+      setDailyLoaded(true);
+    } catch (err) {
+      setDailyMessage({ type: 'error', text: err.response?.data?.error || 'Failed to load daily data' });
+    } finally {
+      setLoadingDaily(false);
+    }
+  };
+
+  const handleSaveDaily = async () => {
+    if (!dailyActivityId || dailyRows.length === 0) {
+      setDailyMessage({ type: 'error', text: 'No data to save' });
+      return;
+    }
+
+    setSavingDaily(true);
+    setDailyMessage({ type: '', text: '' });
+
+    try {
+      const entries = dailyRows.map(row => ({
+        date: row.date,
+        target_value: parseFloat(row.target_value) || 0,
+        accomplishment_value: parseFloat(row.accomplishment_value) || 0
+      }));
+
+      await api.post('/schedule/daily', {
+        activity_id: parseInt(dailyActivityId),
+        entries
+      });
+
+      setDailyMessage({ type: 'success', text: 'Daily accomplishments saved successfully!' });
+    } catch (err) {
+      setDailyMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save daily data' });
+    } finally {
+      setSavingDaily(false);
+    }
+  };
+
+  const updateDailyRow = (index, field, value) => {
+    setDailyRows(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  // Daily totals
+  const dailyTotalTarget = dailyRows.reduce((sum, r) => sum + (parseFloat(r.target_value) || 0), 0);
+  const dailyTotalAccomplishment = dailyRows.reduce((sum, r) => sum + (parseFloat(r.accomplishment_value) || 0), 0);
+  const dailyTotalVariance = dailyTotalAccomplishment - dailyTotalTarget;
+
   const annualTotal = monthlyTargets.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
 
   // Helper to update a single cell in the grid
@@ -276,7 +401,7 @@ export default function Schedule() {
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Annual Schedule</h2>
 
       {/* Tab Selector */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 max-w-xl">
+      <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 max-w-3xl">
         {isAdmin && (
           <button
             onClick={() => setActiveTab('targets')}
@@ -299,6 +424,18 @@ export default function Schedule() {
             }`}
           >
             Manual Accomplishment
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('dailyInput')}
+            className={`flex-1 px-4 py-2 rounded-md text-sm font-semibold transition ${
+              activeTab === 'dailyInput'
+                ? 'bg-[#1e3a8a] text-white shadow'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Daily Input
           </button>
         )}
         <button
@@ -557,6 +694,205 @@ export default function Schedule() {
           {gridLoaded && gridActivities.length === 0 && (
             <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
               <p className="text-gray-500 text-sm">No activities found for this department.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========== DAILY INPUT TAB (Admin Only) ========== */}
+      {activeTab === 'dailyInput' && isAdmin && (
+        <div>
+          {/* Selectors */}
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-6">
+            <div className="bg-[#1e3a8a] text-white px-4 py-2 font-semibold text-sm">
+              Daily Accomplishment Input
+            </div>
+            <div className="p-6">
+              <div className="flex flex-wrap gap-4 items-end">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                  <select
+                    value={dailyYear}
+                    onChange={e => setDailyYear(parseInt(e.target.value))}
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  >
+                    {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Month</label>
+                  <select
+                    value={dailyMonth}
+                    onChange={e => setDailyMonth(parseInt(e.target.value))}
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  >
+                    {MONTH_NAMES.map((name, i) => <option key={i + 1} value={i + 1}>{name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <select
+                    value={dailyDeptId}
+                    onChange={e => setDailyDeptId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  >
+                    <option value="">Select Department</option>
+                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
+                  <select
+                    value={dailyActivityId}
+                    onChange={e => setDailyActivityId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm min-w-[220px]"
+                    disabled={!dailyDeptId}
+                  >
+                    <option value="">Select Activity</option>
+                    {dailyActivities.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <button
+                  onClick={handleLoadDaily}
+                  disabled={loadingDaily || !dailyActivityId}
+                  className="bg-[#1e3a8a] hover:bg-[#1a1a2e] text-white px-6 py-2 rounded-lg text-sm font-bold transition disabled:opacity-50"
+                >
+                  {loadingDaily ? 'Loading...' : 'Load'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Message */}
+          {dailyMessage.text && (
+            <div className={`px-4 py-3 rounded-lg text-sm mb-6 ${
+              dailyMessage.type === 'success'
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}>
+              {dailyMessage.text}
+            </div>
+          )}
+
+          {/* Empty state before loading */}
+          {!dailyLoaded && !loadingDaily && (
+            <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <p className="text-gray-500">Select year, month, department, and activity, then click "Load" to enter daily values.</p>
+            </div>
+          )}
+
+          {/* Daily Grid */}
+          {dailyLoaded && dailyRows.length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-6">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-[#1e3a8a] text-white">
+                      <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: '50px' }}>Day</th>
+                      <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: '110px' }}>Date</th>
+                      <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: '60px' }}>Day Name</th>
+                      <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: '100px' }}>Target</th>
+                      <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: '100px' }}>Accomplishment</th>
+                      <th className="text-center px-3 py-2 text-xs font-semibold" style={{ width: '100px' }}>Variance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyRows.map((row, idx) => {
+                      const target = parseFloat(row.target_value) || 0;
+                      const accomplishment = parseFloat(row.accomplishment_value) || 0;
+                      const variance = accomplishment - target;
+                      const rowBg = row.isWeekend
+                        ? 'bg-yellow-50'
+                        : idx % 2 === 0
+                          ? 'bg-white'
+                          : 'bg-gray-50';
+
+                      return (
+                        <tr key={row.day} className={rowBg}>
+                          <td className="text-center px-3 py-1.5 text-xs font-medium text-gray-700 border-b border-gray-100">
+                            {row.day}
+                          </td>
+                          <td className="text-center px-3 py-1.5 text-xs text-gray-600 border-b border-gray-100">
+                            {row.date}
+                          </td>
+                          <td className={`text-center px-3 py-1.5 text-xs font-medium border-b border-gray-100 ${
+                            row.isWeekend ? 'text-amber-700 font-bold' : 'text-gray-600'
+                          }`}>
+                            {row.dayName}
+                          </td>
+                          <td className="text-center px-2 py-1.5 border-b border-gray-100">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={row.target_value}
+                              onChange={e => updateDailyRow(idx, 'target_value', e.target.value)}
+                              placeholder="0"
+                              className="border border-gray-200 rounded px-2 py-1 text-xs text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                              style={{ width: '80px' }}
+                            />
+                          </td>
+                          <td className="text-center px-2 py-1.5 border-b border-gray-100">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={row.accomplishment_value}
+                              onChange={e => updateDailyRow(idx, 'accomplishment_value', e.target.value)}
+                              placeholder="0"
+                              className="border border-gray-200 rounded px-2 py-1 text-xs text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                              style={{ width: '80px' }}
+                            />
+                          </td>
+                          <td className={`text-center px-3 py-1.5 text-xs font-bold border-b border-gray-100 ${
+                            variance >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {(target > 0 || accomplishment > 0) ? (
+                              <>{variance >= 0 ? '+' : ''}{formatNumber(variance)}</>
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Totals Row */}
+                    <tr className="bg-[#1a1a2e] text-white font-bold">
+                      <td className="text-center px-3 py-2 text-xs" colSpan={3}>
+                        TOTAL
+                      </td>
+                      <td className="text-center px-3 py-2 text-xs">
+                        {formatNumber(dailyTotalTarget)}
+                      </td>
+                      <td className="text-center px-3 py-2 text-xs">
+                        {formatNumber(dailyTotalAccomplishment)}
+                      </td>
+                      <td className={`text-center px-3 py-2 text-xs font-bold ${
+                        dailyTotalVariance >= 0 ? 'text-green-400' : 'text-red-400'
+                      }`}>
+                        {dailyTotalVariance >= 0 ? '+' : ''}{formatNumber(dailyTotalVariance)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex items-center justify-between bg-gray-50 border-t border-gray-200 px-4 py-3">
+                <div className="text-sm text-gray-600">
+                  {dailyRows.length} days in {MONTH_NAMES[dailyMonth - 1]} {dailyYear}
+                </div>
+                <button
+                  onClick={handleSaveDaily}
+                  disabled={savingDaily}
+                  className="bg-[#f59e0b] hover:bg-[#d97706] text-black px-6 py-2 rounded-lg text-sm font-bold transition disabled:opacity-50"
+                >
+                  {savingDaily ? 'Saving...' : 'Save Daily Values'}
+                </button>
+              </div>
             </div>
           )}
         </div>
