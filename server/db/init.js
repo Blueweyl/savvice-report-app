@@ -134,6 +134,20 @@ async function init() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS manual_accomplishments (
+      id SERIAL PRIMARY KEY,
+      year INTEGER NOT NULL,
+      department_id INTEGER REFERENCES departments(id),
+      activity_id INTEGER REFERENCES activities(id),
+      month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12),
+      accomplishment_value DECIMAL(10,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(year, activity_id, month)
+    );
+  `);
+
   for (const dept of DEPARTMENTS) {
     const res = await pool.query(
       'INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = $1 RETURNING id',

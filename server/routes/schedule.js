@@ -77,6 +77,74 @@ router.post('/targets', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/schedule/accomplishments?year=2026&department_id=1
+router.get('/accomplishments', authenticate, async (req, res) => {
+  try {
+    const { year, department_id } = req.query;
+    if (!year) return res.status(400).json({ error: 'Year is required' });
+
+    let query = `
+      SELECT ma.id, ma.year, ma.month, ma.accomplishment_value, ma.activity_id, ma.department_id,
+             d.name as department_name, a.name as activity_name
+      FROM manual_accomplishments ma
+      JOIN departments d ON ma.department_id = d.id
+      JOIN activities a ON ma.activity_id = a.id
+      WHERE ma.year = $1
+    `;
+    const params = [year];
+
+    if (department_id) {
+      params.push(department_id);
+      query += ` AND ma.department_id = $${params.length}`;
+    }
+
+    query += ' ORDER BY d.name, a.name, ma.month';
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/schedule/accomplishments (admin only)
+router.post('/accomplishments', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { year, activity_id, accomplishments } = req.body;
+
+    if (!year || !activity_id || !Array.isArray(accomplishments)) {
+      return res.status(400).json({ error: 'year, activity_id, and accomplishments array are required' });
+    }
+
+    // Look up the department_id for this activity
+    const actResult = await pool.query('SELECT department_id FROM activities WHERE id = $1', [activity_id]);
+    if (actResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Activity not found' });
+    }
+    const department_id = actResult.rows[0].department_id;
+
+    const results = [];
+    for (const a of accomplishments) {
+      if (!a.month || a.month < 1 || a.month > 12) continue;
+      const accomplishmentValue = parseFloat(a.accomplishment_value) || 0;
+
+      const result = await pool.query(`
+        INSERT INTO manual_accomplishments (year, department_id, activity_id, month, accomplishment_value)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (year, activity_id, month)
+        DO UPDATE SET accomplishment_value = $5, department_id = $2, updated_at = NOW()
+        RETURNING *
+      `, [year, department_id, activity_id, a.month, accomplishmentValue]);
+
+      results.push(result.rows[0]);
+    }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/schedule/overview?year=2026&department_id=1
 router.get('/overview', authenticate, async (req, res) => {
   try {
@@ -108,8 +176,8 @@ router.get('/overview', authenticate, async (req, res) => {
       ORDER BY activity_id, month
     `, [year, department_id]);
 
-    // Get accomplishments from reports
-    const accomplishmentResult = await pool.query(`
+    // Get auto accomplishments from approved reports
+    const autoAccomplishmentResult = await pool.query(`
       SELECT activity_id, EXTRACT(MONTH FROM report_date)::int as month,
              COALESCE(SUM(accomplishment), 0) as total
       FROM reports
@@ -119,6 +187,14 @@ router.get('/overview', authenticate, async (req, res) => {
       GROUP BY activity_id, EXTRACT(MONTH FROM report_date)
     `, [year, department_id]);
 
+    // Get manual accomplishments
+    const manualAccomplishmentResult = await pool.query(`
+      SELECT activity_id, month, accomplishment_value
+      FROM manual_accomplishments
+      WHERE year = $1 AND department_id = $2
+      ORDER BY activity_id, month
+    `, [year, department_id]);
+
     // Build lookup maps
     const targetMap = {};
     for (const t of targetsResult.rows) {
@@ -126,39 +202,57 @@ router.get('/overview', authenticate, async (req, res) => {
       targetMap[key] = parseFloat(t.target_value) || 0;
     }
 
-    const accomplishmentMap = {};
-    for (const a of accomplishmentResult.rows) {
+    const autoAccomplishmentMap = {};
+    for (const a of autoAccomplishmentResult.rows) {
       const key = `${a.activity_id}-${a.month}`;
-      accomplishmentMap[key] = parseFloat(a.total) || 0;
+      autoAccomplishmentMap[key] = parseFloat(a.total) || 0;
+    }
+
+    const manualAccomplishmentMap = {};
+    for (const m of manualAccomplishmentResult.rows) {
+      const key = `${m.activity_id}-${m.month}`;
+      manualAccomplishmentMap[key] = parseFloat(m.accomplishment_value) || 0;
     }
 
     // Build response
     let grandTotalTarget = 0;
+    let grandTotalAutoAccomplishment = 0;
+    let grandTotalManualAccomplishment = 0;
     let grandTotalAccomplishment = 0;
 
     const activities = activitiesResult.rows.map(activity => {
       let annualTarget = 0;
+      let annualAutoAccomplishment = 0;
+      let annualManualAccomplishment = 0;
       let annualAccomplishment = 0;
 
       const monthly = [];
       for (let m = 1; m <= 12; m++) {
         const target = targetMap[`${activity.id}-${m}`] || 0;
-        const accomplishment = accomplishmentMap[`${activity.id}-${m}`] || 0;
-        const percentage = target > 0 ? parseFloat(((accomplishment / target) * 100).toFixed(2)) : 0;
+        const autoAccomplishment = autoAccomplishmentMap[`${activity.id}-${m}`] || 0;
+        const manualAccomplishment = manualAccomplishmentMap[`${activity.id}-${m}`] || 0;
+        const totalAccomplishment = autoAccomplishment + manualAccomplishment;
+        const percentage = target > 0 ? parseFloat(((totalAccomplishment / target) * 100).toFixed(2)) : 0;
 
         annualTarget += target;
-        annualAccomplishment += accomplishment;
+        annualAutoAccomplishment += autoAccomplishment;
+        annualManualAccomplishment += manualAccomplishment;
+        annualAccomplishment += totalAccomplishment;
 
         monthly.push({
           month: m,
           month_name: MONTH_NAMES[m - 1],
           target: parseFloat(target.toFixed(2)),
-          accomplishment: parseFloat(accomplishment.toFixed(2)),
+          auto_accomplishment: parseFloat(autoAccomplishment.toFixed(2)),
+          manual_accomplishment: parseFloat(manualAccomplishment.toFixed(2)),
+          accomplishment: parseFloat(totalAccomplishment.toFixed(2)),
           percentage
         });
       }
 
       grandTotalTarget += annualTarget;
+      grandTotalAutoAccomplishment += annualAutoAccomplishment;
+      grandTotalManualAccomplishment += annualManualAccomplishment;
       grandTotalAccomplishment += annualAccomplishment;
 
       const annualPercentage = annualTarget > 0
@@ -169,6 +263,8 @@ router.get('/overview', authenticate, async (req, res) => {
         activity_id: activity.id,
         activity_name: activity.name,
         annual_target: parseFloat(annualTarget.toFixed(2)),
+        annual_auto_accomplishment: parseFloat(annualAutoAccomplishment.toFixed(2)),
+        annual_manual_accomplishment: parseFloat(annualManualAccomplishment.toFixed(2)),
         annual_accomplishment: parseFloat(annualAccomplishment.toFixed(2)),
         percentage: annualPercentage,
         monthly
@@ -185,6 +281,8 @@ router.get('/overview', authenticate, async (req, res) => {
       activities,
       totals: {
         total_target: parseFloat(grandTotalTarget.toFixed(2)),
+        total_auto_accomplishment: parseFloat(grandTotalAutoAccomplishment.toFixed(2)),
+        total_manual_accomplishment: parseFloat(grandTotalManualAccomplishment.toFixed(2)),
         total_accomplishment: parseFloat(grandTotalAccomplishment.toFixed(2)),
         percentage: totalPercentage
       }

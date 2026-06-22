@@ -48,6 +48,16 @@ export default function Schedule() {
   const [savingTargets, setSavingTargets] = useState(false);
   const [targetMessage, setTargetMessage] = useState({ type: '', text: '' });
 
+  // Manual accomplishment state
+  const [accomYear, setAccomYear] = useState(new Date().getFullYear());
+  const [accomDeptId, setAccomDeptId] = useState('');
+  const [accomActivities, setAccomActivities] = useState([]);
+  const [accomActivityId, setAccomActivityId] = useState('');
+  const [monthlyAccomplishments, setMonthlyAccomplishments] = useState(Array(12).fill(''));
+  const [accomTargetRef, setAccomTargetRef] = useState(Array(12).fill(0));
+  const [savingAccom, setSavingAccom] = useState(false);
+  const [accomMessage, setAccomMessage] = useState({ type: '', text: '' });
+
   // Overview state
   const [overviewYear, setOverviewYear] = useState(new Date().getFullYear());
   const [overviewDeptId, setOverviewDeptId] = useState('');
@@ -87,6 +97,47 @@ export default function Schedule() {
     }
   }, [targetActivityId, targetYear, targetDeptId]);
 
+  // Load activities when accomplishment department changes
+  useEffect(() => {
+    if (accomDeptId) {
+      api.get(`/departments/${accomDeptId}/activities`).then(res => setAccomActivities(res.data)).catch(() => {});
+    } else {
+      setAccomActivities([]);
+    }
+    setAccomActivityId('');
+    setMonthlyAccomplishments(Array(12).fill(''));
+    setAccomTargetRef(Array(12).fill(0));
+  }, [accomDeptId]);
+
+  // Load existing manual accomplishments and target reference when activity is selected
+  useEffect(() => {
+    if (accomActivityId && accomYear && accomDeptId) {
+      // Load existing manual accomplishments
+      api.get(`/schedule/accomplishments?year=${accomYear}&department_id=${accomDeptId}`)
+        .then(res => {
+          const existing = res.data.filter(a => a.activity_id === parseInt(accomActivityId));
+          const newAccom = Array(12).fill('');
+          existing.forEach(a => {
+            newAccom[a.month - 1] = a.accomplishment_value ? String(parseFloat(a.accomplishment_value)) : '';
+          });
+          setMonthlyAccomplishments(newAccom);
+        })
+        .catch(() => {});
+
+      // Load target values for reference
+      api.get(`/schedule/targets?year=${accomYear}&department_id=${accomDeptId}`)
+        .then(res => {
+          const existing = res.data.filter(t => t.activity_id === parseInt(accomActivityId));
+          const newRef = Array(12).fill(0);
+          existing.forEach(t => {
+            newRef[t.month - 1] = parseFloat(t.target_value) || 0;
+          });
+          setAccomTargetRef(newRef);
+        })
+        .catch(() => {});
+    }
+  }, [accomActivityId, accomYear, accomDeptId]);
+
   const handleSaveTargets = async () => {
     if (!targetYear || !targetActivityId) {
       setTargetMessage({ type: 'error', text: 'Please select year and activity' });
@@ -116,6 +167,35 @@ export default function Schedule() {
     }
   };
 
+  const handleSaveAccomplishments = async () => {
+    if (!accomYear || !accomActivityId) {
+      setAccomMessage({ type: 'error', text: 'Please select year and activity' });
+      return;
+    }
+
+    setSavingAccom(true);
+    setAccomMessage({ type: '', text: '' });
+
+    try {
+      const accomplishments = monthlyAccomplishments.map((val, i) => ({
+        month: i + 1,
+        accomplishment_value: parseFloat(val) || 0
+      }));
+
+      await api.post('/schedule/accomplishments', {
+        year: accomYear,
+        activity_id: parseInt(accomActivityId),
+        accomplishments
+      });
+
+      setAccomMessage({ type: 'success', text: 'Accomplishments saved successfully!' });
+    } catch (err) {
+      setAccomMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save accomplishments' });
+    } finally {
+      setSavingAccom(false);
+    }
+  };
+
   const fetchOverview = useCallback(async () => {
     if (!overviewYear || !overviewDeptId) {
       setOverviewError('Please select both year and department');
@@ -137,13 +217,15 @@ export default function Schedule() {
   }, [overviewYear, overviewDeptId]);
 
   const annualTotal = monthlyTargets.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+  const annualAccomTotal = monthlyAccomplishments.reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+  const annualTargetRefTotal = accomTargetRef.reduce((sum, v) => sum + v, 0);
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Annual Schedule</h2>
 
       {/* Tab Selector */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 max-w-md">
+      <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 max-w-xl">
         {isAdmin && (
           <button
             onClick={() => setActiveTab('targets')}
@@ -154,6 +236,18 @@ export default function Schedule() {
             }`}
           >
             Set Targets
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('accomplishments')}
+            className={`flex-1 px-4 py-2 rounded-md text-sm font-semibold transition ${
+              activeTab === 'accomplishments'
+                ? 'bg-[#1e3a8a] text-white shadow'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Manual Accomplishment
           </button>
         )}
         <button
@@ -266,6 +360,110 @@ export default function Schedule() {
         </div>
       )}
 
+      {/* ========== MANUAL ACCOMPLISHMENT TAB (Admin Only) ========== */}
+      {activeTab === 'accomplishments' && isAdmin && (
+        <div>
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden mb-6">
+            <div className="bg-[#1e3a8a] text-white px-4 py-2 font-semibold text-sm">
+              Manual Accomplishment Entry
+            </div>
+            <div className="p-6">
+              {/* Selectors */}
+              <div className="flex flex-wrap gap-4 items-end mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                  <select
+                    value={accomYear}
+                    onChange={e => setAccomYear(parseInt(e.target.value))}
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  >
+                    {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <select
+                    value={accomDeptId}
+                    onChange={e => setAccomDeptId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  >
+                    <option value="">Select Department</option>
+                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
+                  <select
+                    value={accomActivityId}
+                    onChange={e => setAccomActivityId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm min-w-[220px]"
+                    disabled={!accomDeptId}
+                  >
+                    <option value="">Select Activity</option>
+                    {accomActivities.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Monthly Accomplishment Grid */}
+              {accomActivityId && (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
+                    {MONTH_NAMES.map((month, i) => (
+                      <div key={month} className="border border-gray-200 rounded-lg p-3">
+                        <label className="block text-xs font-semibold text-gray-500 mb-1">{month}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={monthlyAccomplishments[i]}
+                          onChange={e => {
+                            const updated = [...monthlyAccomplishments];
+                            updated[i] = e.target.value;
+                            setMonthlyAccomplishments(updated);
+                          }}
+                          placeholder="0.00"
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <div className="text-xs text-gray-400 mt-1">
+                          Target: {formatNumber(accomTargetRef[i])}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 mb-4">
+                    <div className="text-sm text-gray-600">
+                      Annual Total: <span className="font-bold text-[#1e3a8a] text-lg">{formatNumber(annualAccomTotal)}</span>
+                      <span className="text-gray-400 ml-3">
+                        (Target: {formatNumber(annualTargetRefTotal)})
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleSaveAccomplishments}
+                      disabled={savingAccom}
+                      className="bg-[#f59e0b] hover:bg-[#d97706] text-black px-6 py-2 rounded-lg text-sm font-bold transition disabled:opacity-50"
+                    >
+                      {savingAccom ? 'Saving...' : 'Save Accomplishments'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {accomMessage.text && (
+                <div className={`px-4 py-3 rounded-lg text-sm ${
+                  accomMessage.type === 'success'
+                    ? 'bg-green-50 border border-green-200 text-green-700'
+                    : 'bg-red-50 border border-red-200 text-red-700'
+                }`}>
+                  {accomMessage.text}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ========== OVERVIEW TAB ========== */}
       {activeTab === 'overview' && (
         <div>
@@ -325,6 +523,11 @@ export default function Schedule() {
 
           {overview && (
             <>
+              {/* Legend Note */}
+              <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg mb-6 text-sm">
+                <span className="font-semibold">Note:</span> Auto = from submitted reports, Manual = entered directly. Total accomplishment = Auto + Manual combined.
+              </div>
+
               {/* Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-white rounded-lg border border-gray-200 p-5 text-center">
@@ -334,6 +537,9 @@ export default function Schedule() {
                 <div className="bg-white rounded-lg border border-gray-200 p-5 text-center">
                   <div className="text-3xl font-bold text-[#f59e0b]">{formatNumber(overview.totals.total_accomplishment)}</div>
                   <div className="text-sm text-gray-500 mt-1">Total Accomplishment</div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Auto: {formatNumber(overview.totals.total_auto_accomplishment)} | Manual: {formatNumber(overview.totals.total_manual_accomplishment)}
+                  </div>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-5 text-center">
                   <div className={`text-3xl font-bold ${getPercentageColor(overview.totals.percentage)}`}>
@@ -416,53 +622,61 @@ export default function Schedule() {
                           {isExpanded && (
                             <div className="px-4 pb-4">
                               <div className="bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
-                                <table className="w-full">
-                                  <thead className="bg-gray-100 border-b border-gray-200">
-                                    <tr>
-                                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Month</th>
-                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Target</th>
-                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Actual</th>
-                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Variance</th>
-                                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">%</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-gray-100">
-                                    {activity.monthly.map((m, i) => {
-                                      const variance = m.accomplishment - m.target;
-                                      const hasMonthTarget = m.target > 0;
-                                      return (
-                                        <tr key={m.month} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                          <td className="px-3 py-2 text-sm text-gray-800 font-medium">{m.month_name}</td>
-                                          <td className="px-3 py-2 text-sm text-gray-600 text-right">{formatNumber(m.target)}</td>
-                                          <td className="px-3 py-2 text-sm text-gray-600 text-right">{formatNumber(m.accomplishment)}</td>
-                                          <td className={`px-3 py-2 text-sm text-right font-medium ${variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {variance >= 0 ? '+' : ''}{formatNumber(variance)}
-                                          </td>
-                                          <td className="px-3 py-2 text-right">
-                                            {hasMonthTarget ? (
-                                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${getPercentageBg(m.percentage)}`}>
-                                                {m.percentage}%
-                                              </span>
-                                            ) : (
-                                              <span className="text-xs text-gray-400">-</span>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                    {/* Summary Row */}
-                                    <tr className="bg-[#1a1a2e] text-white font-semibold">
-                                      <td className="px-3 py-2 text-sm">Annual Total</td>
-                                      <td className="px-3 py-2 text-sm text-right">{formatNumber(activity.annual_target)}</td>
-                                      <td className="px-3 py-2 text-sm text-right">{formatNumber(activity.annual_accomplishment)}</td>
-                                      <td className="px-3 py-2 text-sm text-right">
-                                        {(activity.annual_accomplishment - activity.annual_target) >= 0 ? '+' : ''}
-                                        {formatNumber(activity.annual_accomplishment - activity.annual_target)}
-                                      </td>
-                                      <td className="px-3 py-2 text-sm text-right">{activity.percentage}%</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full">
+                                    <thead className="bg-gray-100 border-b border-gray-200">
+                                      <tr>
+                                        <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Month</th>
+                                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Target</th>
+                                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Auto</th>
+                                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Manual</th>
+                                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Total</th>
+                                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Variance</th>
+                                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">%</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {activity.monthly.map((m, i) => {
+                                        const variance = m.accomplishment - m.target;
+                                        const hasMonthTarget = m.target > 0;
+                                        return (
+                                          <tr key={m.month} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <td className="px-3 py-2 text-sm text-gray-800 font-medium">{m.month_name}</td>
+                                            <td className="px-3 py-2 text-sm text-gray-600 text-right">{formatNumber(m.target)}</td>
+                                            <td className="px-3 py-2 text-sm text-blue-600 text-right">{formatNumber(m.auto_accomplishment)}</td>
+                                            <td className="px-3 py-2 text-sm text-purple-600 text-right">{formatNumber(m.manual_accomplishment)}</td>
+                                            <td className="px-3 py-2 text-sm text-gray-800 text-right font-medium">{formatNumber(m.accomplishment)}</td>
+                                            <td className={`px-3 py-2 text-sm text-right font-medium ${variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                              {variance >= 0 ? '+' : ''}{formatNumber(variance)}
+                                            </td>
+                                            <td className="px-3 py-2 text-right">
+                                              {hasMonthTarget ? (
+                                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${getPercentageBg(m.percentage)}`}>
+                                                  {m.percentage}%
+                                                </span>
+                                              ) : (
+                                                <span className="text-xs text-gray-400">-</span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                      {/* Summary Row */}
+                                      <tr className="bg-[#1a1a2e] text-white font-semibold">
+                                        <td className="px-3 py-2 text-sm">Annual Total</td>
+                                        <td className="px-3 py-2 text-sm text-right">{formatNumber(activity.annual_target)}</td>
+                                        <td className="px-3 py-2 text-sm text-right">{formatNumber(activity.annual_auto_accomplishment)}</td>
+                                        <td className="px-3 py-2 text-sm text-right">{formatNumber(activity.annual_manual_accomplishment)}</td>
+                                        <td className="px-3 py-2 text-sm text-right">{formatNumber(activity.annual_accomplishment)}</td>
+                                        <td className="px-3 py-2 text-sm text-right">
+                                          {(activity.annual_accomplishment - activity.annual_target) >= 0 ? '+' : ''}
+                                          {formatNumber(activity.annual_accomplishment - activity.annual_target)}
+                                        </td>
+                                        <td className="px-3 py-2 text-sm text-right">{activity.percentage}%</td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
                               </div>
                             </div>
                           )}
@@ -484,7 +698,9 @@ export default function Schedule() {
                       <tr>
                         <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 sticky left-0 bg-gray-50">Month</th>
                         <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Target</th>
-                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Actual</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Auto</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Manual</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Total</th>
                         <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">Variance</th>
                         <th className="text-right px-3 py-2 text-xs font-semibold text-gray-600">%</th>
                       </tr>
@@ -493,22 +709,28 @@ export default function Schedule() {
                       {MONTH_NAMES.map((monthName, i) => {
                         const monthNum = i + 1;
                         let monthTarget = 0;
-                        let monthAccomplishment = 0;
+                        let monthAutoAccom = 0;
+                        let monthManualAccom = 0;
+                        let monthTotalAccom = 0;
                         overview.activities.forEach(a => {
                           const m = a.monthly.find(mm => mm.month === monthNum);
                           if (m) {
                             monthTarget += m.target;
-                            monthAccomplishment += m.accomplishment;
+                            monthAutoAccom += m.auto_accomplishment;
+                            monthManualAccom += m.manual_accomplishment;
+                            monthTotalAccom += m.accomplishment;
                           }
                         });
-                        const variance = monthAccomplishment - monthTarget;
-                        const pct = monthTarget > 0 ? parseFloat(((monthAccomplishment / monthTarget) * 100).toFixed(2)) : 0;
+                        const variance = monthTotalAccom - monthTarget;
+                        const pct = monthTarget > 0 ? parseFloat(((monthTotalAccom / monthTarget) * 100).toFixed(2)) : 0;
 
                         return (
                           <tr key={monthNum} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                             <td className="px-3 py-2 text-sm text-gray-800 font-medium sticky left-0 bg-inherit">{monthName}</td>
                             <td className="px-3 py-2 text-sm text-gray-600 text-right">{formatNumber(monthTarget)}</td>
-                            <td className="px-3 py-2 text-sm text-gray-600 text-right">{formatNumber(monthAccomplishment)}</td>
+                            <td className="px-3 py-2 text-sm text-blue-600 text-right">{formatNumber(monthAutoAccom)}</td>
+                            <td className="px-3 py-2 text-sm text-purple-600 text-right">{formatNumber(monthManualAccom)}</td>
+                            <td className="px-3 py-2 text-sm text-gray-800 text-right font-medium">{formatNumber(monthTotalAccom)}</td>
                             <td className={`px-3 py-2 text-sm text-right font-medium ${variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                               {variance >= 0 ? '+' : ''}{formatNumber(variance)}
                             </td>
@@ -528,6 +750,8 @@ export default function Schedule() {
                       <tr className="bg-[#1a1a2e] text-white font-semibold">
                         <td className="px-3 py-2 text-sm sticky left-0 bg-[#1a1a2e]">Grand Total</td>
                         <td className="px-3 py-2 text-sm text-right">{formatNumber(overview.totals.total_target)}</td>
+                        <td className="px-3 py-2 text-sm text-right">{formatNumber(overview.totals.total_auto_accomplishment)}</td>
+                        <td className="px-3 py-2 text-sm text-right">{formatNumber(overview.totals.total_manual_accomplishment)}</td>
                         <td className="px-3 py-2 text-sm text-right">{formatNumber(overview.totals.total_accomplishment)}</td>
                         <td className="px-3 py-2 text-sm text-right">
                           {(overview.totals.total_accomplishment - overview.totals.total_target) >= 0 ? '+' : ''}
