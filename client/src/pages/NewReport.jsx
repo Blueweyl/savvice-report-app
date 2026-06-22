@@ -2,6 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 
+const OPERATOR_BY_ACTIVITY = {
+  'Concrete Barrier Cleaning': ['Eddie Del Castillo', 'Marcelo Jamito', 'Roldan Camitan', 'Ronald Ortiz'],
+  'Furniture Drainage Cleaning': ['Eddie Del Castillo', 'Marcelo Jamito', 'Roldan Camitan', 'Ronald Ortiz'],
+  'Guardrail Cleaning': ['Eddie Del Castillo', 'Marcelo Jamito', 'Roldan Camitan', 'Ronald Ortiz'],
+  'Signage Cleaning': ['Eddie Del Castillo', 'Marcelo Jamito', 'Roldan Camitan', 'Ronald Ortiz'],
+  'Unscheduled Activity': ['Eddie Del Castillo', 'Marcelo Jamito', 'Roldan Camitan', 'Ronald Ortiz'],
+};
+
 export default function NewReport() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user') || 'null');
@@ -46,6 +54,8 @@ export default function NewReport() {
   }, [selectedDept]);
 
   const deptName = departments.find(d => d.id === parseInt(selectedDept))?.name || '';
+  const selectedActivityName = activities.find(a => a.id === parseInt(form.activity_id))?.name || '';
+  const operatorOptions = OPERATOR_BY_ACTIVITY[selectedActivityName] || [];
 
   function handlePhoto(file, type) {
     if (!file) return;
@@ -116,25 +126,12 @@ export default function NewReport() {
           <div className="bg-blue-800 text-white px-6 py-3 font-bold text-sm flex items-center gap-2">
             <span>📅</span> DATE & SCHEDULE
           </div>
-          <div className="p-6 bg-white grid grid-cols-3 gap-6">
+          <div className="p-6 bg-white grid grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Date <span className="text-red-500">*</span></label>
               <input type="date" required value={form.report_date}
                 onChange={(e) => setForm({ ...form, report_date: e.target.value })}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Team <span className="text-red-500">*</span></label>
-              <select required value={form.team}
-                onChange={(e) => setForm({ ...form, team: e.target.value })}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                <option value="">— Select Team —</option>
-                <option value="Team 1">Team 1</option>
-                <option value="Team 2">Team 2</option>
-                <option value="Team 3">Team 3</option>
-                <option value="Team 4">Team 4</option>
-                <option value="Team 5">Team 5</option>
-              </select>
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1.5 uppercase">Status / Bound <span className="text-red-500">*</span></label>
@@ -246,10 +243,21 @@ export default function NewReport() {
             <div>
               <div className="text-xs font-bold text-blue-700 mb-0.5 uppercase flex items-center gap-1">👤 Operator</div>
               <label className="block text-xs text-gray-500 mb-1.5 uppercase">Operator Name <span className="text-red-500">*</span></label>
-              <input type="text" required value={form.operator_name}
-                onChange={(e) => setForm({ ...form, operator_name: e.target.value })}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                placeholder="e.g. DEL CASTILLO, EDDIE S." />
+              {operatorOptions.length > 0 ? (
+                <select required value={form.operator_name}
+                  onChange={(e) => setForm({ ...form, operator_name: e.target.value })}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option value="">— Select Operator —</option>
+                  {operatorOptions.map((op) => (
+                    <option key={op} value={op}>{op}</option>
+                  ))}
+                </select>
+              ) : (
+                <input type="text" required value={form.operator_name}
+                  onChange={(e) => setForm({ ...form, operator_name: e.target.value })}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="Enter operator name" />
+              )}
             </div>
           </div>
         </div>
