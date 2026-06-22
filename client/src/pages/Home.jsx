@@ -96,22 +96,22 @@ export default function Home() {
       {/* About */}
       <section id="about" className="py-16 px-4 bg-gray-50">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-[#1a1a2e] text-center mb-8">About Us</h2>
+          <h2 className="text-3xl font-bold text-[#1a1a2e] text-center mb-8">The Story of Jinky Quismundo Llagas</h2>
           <div className="bg-white rounded-xl shadow-md p-8 space-y-4">
             <p className="text-gray-700 leading-relaxed">
-              <strong>SAVVICE Corporation</strong> is a solutions provider since 1999 and has been acquired by
-              Metro Pacific Tollways Corporation (MPTC) in 2019. With over two decades of service and 1,601+
-              employees, we deliver excellence across the Philippines.
+              <strong>Jinky Quismundo Llagas</strong> is a remarkable woman whose life is defined by resilience, sacrifice, and an unwavering commitment to her family. She is a mother who dreams not only for herself but also for the future of the people she loves most. Every day, she wakes up with a purpose—to provide a better life for her family and to create opportunities that will help them achieve their own dreams. Her journey has been filled with challenges, but she has never allowed difficulties to stop her from moving forward. Instead, she has turned every obstacle into a stepping stone toward success.
             </p>
             <p className="text-gray-700 leading-relaxed">
-              Our organization delivers housekeeping services, facilities maintenance, fleet management, traffic
-              management, emergency response, roadside assistance, technical and skilled manpower deployment, and
-              allied services.
+              As a <strong>Routine Management Supervisor at Savvice</strong>, Jinky plays a vital role in ensuring that operations run smoothly and efficiently. Her position requires leadership, dedication, and the ability to make important decisions under pressure. Despite the demands of her work, she remains committed to her responsibilities as a mother. She skillfully balances her professional duties with the needs of her family, often placing the well-being of her loved ones above her own comfort. The long hours, endless responsibilities, and daily pressures are challenges she faces with courage and determination.
             </p>
             <p className="text-gray-700 leading-relaxed">
-              The <strong>Routine Maintenance Department</strong> manages three specialized divisions —
-              <strong> Furniture, Bridge, and Roadway</strong> — each handling specific maintenance activities
-              to keep our infrastructure safe and operational.
+              Behind her professional achievements lies the heart of a devoted mother. There are countless moments when she sacrifices rest, personal time, and even her own needs to ensure that her family is cared for and supported. She understands that success is not merely about reaching personal goals but about lifting her family toward a brighter future. Her children serve as her inspiration, giving her the strength to continue even during the most difficult days. Their dreams have become her dreams, and their future remains her greatest motivation.
+            </p>
+            <p className="text-gray-700 leading-relaxed">
+              There are days when exhaustion threatens to overwhelm her and nights when worries quietly fill her thoughts. Yet she continues to rise each morning with renewed determination. She believes that every sacrifice made today will eventually lead to a better tomorrow. Through hard work, perseverance, and faith, she has learned to overcome life's uncertainties while remaining focused on her goals. Her story is one of quiet strength—a woman who continues to fight for her family despite the challenges she faces.
+            </p>
+            <p className="text-gray-700 leading-relaxed">
+              <strong>Jinky Quismundo Llagas</strong> is more than a supervisor and more than a mother; she is a symbol of perseverance and hope. Her life reflects the courage of a woman who refuses to give up, no matter how difficult the journey becomes. She continues to inspire those around her through her dedication, humility, and unwavering love for her family. Every achievement she earns is a testament to her hard work and sacrifice. As she moves forward in life, she carries with her a dream of providing security, happiness, and endless opportunities for her family. Her story reminds us that true success is not measured by titles or accomplishments alone, but by the lives we touch and the sacrifices we make for the people we love.
             </p>
           </div>
         </div>
