@@ -8,6 +8,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import ReportDetail from './pages/ReportDetail';
 import Summary from './pages/Summary';
 import Schedule from './pages/Schedule';
+import Attendance from './pages/Attendance';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children, role }) {
@@ -64,6 +65,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <Layout><Schedule /></Layout>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/attendance"
+          element={
+            <PrivateRoute>
+              <Layout><Attendance /></Layout>
             </PrivateRoute>
           }
         />

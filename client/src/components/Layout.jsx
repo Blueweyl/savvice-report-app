@@ -39,6 +39,9 @@ export default function Layout({ children }) {
               <Link to="/schedule" className="text-sm text-gray-300 hover:text-white transition">
                 Schedule
               </Link>
+              <Link to="/attendance" className="text-sm text-gray-300 hover:text-white transition">
+                Attendance
+              </Link>
             </nav>
           </div>
           {user && (
