@@ -24,6 +24,8 @@ export default function Billing() {
   const [mpDaysUsed, setMpDaysUsed] = useState({});
   const [mpLoading, setMpLoading] = useState(false);
   const [mpSaving, setMpSaving] = useState(false);
+  const [attendanceDays, setAttendanceDays] = useState({});  // { billing_manpower_id: days_present }
+  const [autoFilling, setAutoFilling] = useState(false);
 
   // Summary state
   const [summary, setSummary] = useState(null);
@@ -71,11 +73,53 @@ export default function Billing() {
     setMpLoading(false);
   }, [month, year]);
 
+  // Load attendance days when manpower tab is active
+  const loadAttendanceDays = useCallback(async () => {
+    try {
+      const res = await api.get('/billing/auto-days', { params: { month, year } });
+      const daysMap = {};
+      res.data.forEach(r => { daysMap[r.billing_manpower_id] = r.days_present; });
+      setAttendanceDays(daysMap);
+    } catch (err) {
+      console.error('Error loading attendance days:', err);
+    }
+  }, [month, year]);
+
+  // Auto-fill days_used from attendance
+  async function autoFillFromAttendance() {
+    setAutoFilling(true);
+    try {
+      const res = await api.get('/billing/auto-days', { params: { month, year } });
+      const daysMap = {};
+      const attMap = {};
+      res.data.forEach(r => {
+        daysMap[r.billing_manpower_id] = r.days_present;
+        attMap[r.billing_manpower_id] = r.days_present;
+      });
+      setMpDaysUsed(prev => {
+        const updated = { ...prev };
+        Object.entries(daysMap).forEach(([id, days]) => {
+          updated[id] = days;
+        });
+        return updated;
+      });
+      setAttendanceDays(attMap);
+      setMessage('Days auto-filled from attendance records!');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setMessage('Error auto-filling from attendance: ' + (err.response?.data?.error || err.message));
+    }
+    setAutoFilling(false);
+  }
+
   // Load on tab change / month-year change
   useEffect(() => {
     if (activeTab === 'equipment') loadEquipment();
-    else if (activeTab === 'manpower') loadManpower();
-  }, [activeTab, loadEquipment, loadManpower]);
+    else if (activeTab === 'manpower') {
+      loadManpower();
+      loadAttendanceDays();
+    }
+  }, [activeTab, loadEquipment, loadManpower, loadAttendanceDays]);
 
   // Save equipment records
   async function saveEquipmentRecords() {
@@ -322,6 +366,31 @@ export default function Billing() {
             <div className="p-8 text-center text-gray-500">Loading manpower...</div>
           ) : (
             <>
+              {/* Auto-fill button */}
+              <div className="p-4 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={autoFillFromAttendance}
+                    disabled={autoFilling}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-medium text-sm transition disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {autoFilling ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        Auto-filling...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        Auto-fill from Attendance
+                      </>
+                    )}
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    Fills "Days Used" with present-day counts from the Attendance system for {MONTH_NAMES[month]} {year}
+                  </span>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -340,6 +409,7 @@ export default function Billing() {
                       items.map((mp, idx) => {
                         const days = parseFloat(mpDaysUsed[mp.id]) || 0;
                         const amount = parseFloat(mp.daily_rate) * days;
+                        const attDays = attendanceDays[mp.id];
                         return (
                           <tr key={mp.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                             {idx === 0 && (
@@ -355,15 +425,22 @@ export default function Billing() {
                             <td className="px-3 py-2 text-gray-600 text-xs">{mp.description}</td>
                             <td className="px-3 py-2 text-right font-mono">{formatCurrency(mp.daily_rate)}</td>
                             <td className="px-3 py-2 text-center">
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={mpDaysUsed[mp.id] ?? ''}
-                                onChange={e => setMpDaysUsed(prev => ({ ...prev, [mp.id]: e.target.value }))}
-                                className="w-20 border border-gray-300 rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="0"
-                              />
+                              <div className="flex flex-col items-center">
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="0"
+                                  value={mpDaysUsed[mp.id] ?? ''}
+                                  onChange={e => setMpDaysUsed(prev => ({ ...prev, [mp.id]: e.target.value }))}
+                                  className="w-20 border border-gray-300 rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder="0"
+                                />
+                                {attDays !== undefined && (
+                                  <span className="text-xs text-gray-400 mt-0.5">
+                                    Attendance: {attDays} {attDays === 1 ? 'day' : 'days'}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-right font-mono font-semibold">
                               {formatCurrency(amount)}
@@ -466,6 +543,7 @@ export default function Billing() {
                       <th className="px-3 py-2 text-left font-medium text-[#1e3a8a]">Position</th>
                       <th className="px-3 py-2 text-left font-medium text-[#1e3a8a]">Name</th>
                       <th className="px-3 py-2 text-right font-medium text-[#1e3a8a]">Daily Rate</th>
+                      <th className="px-3 py-2 text-center font-medium text-[#1e3a8a]">Attendance Days</th>
                       <th className="px-3 py-2 text-center font-medium text-[#1e3a8a]">Days Used</th>
                       <th className="px-3 py-2 text-right font-medium text-[#1e3a8a]">Amount</th>
                     </tr>
@@ -477,12 +555,20 @@ export default function Billing() {
                         <td className="px-3 py-1.5">{mp.position}</td>
                         <td className="px-3 py-1.5 font-medium">{mp.name}</td>
                         <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(mp.daily_rate)}</td>
-                        <td className="px-3 py-1.5 text-center">{parseFloat(mp.days_used)}</td>
+                        <td className="px-3 py-1.5 text-center">
+                          <span className="text-emerald-600 font-medium">{parseInt(mp.attendance_days) || 0}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          {parseFloat(mp.days_used)}
+                          {parseFloat(mp.days_used) > 0 && parseInt(mp.attendance_days) > 0 && parseFloat(mp.days_used) !== parseInt(mp.attendance_days) && (
+                            <span className="text-xs text-amber-600 ml-1" title="Days used differs from attendance count">(manual)</span>
+                          )}
+                        </td>
                         <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(mp.amount)}</td>
                       </tr>
                     ))}
                     <tr className="bg-blue-50 font-bold">
-                      <td colSpan={5} className="px-3 py-2 text-right text-[#1e3a8a]">Manpower Subtotal:</td>
+                      <td colSpan={6} className="px-3 py-2 text-right text-[#1e3a8a]">Manpower Subtotal:</td>
                       <td className="px-3 py-2 text-right font-mono text-[#1e3a8a]">{formatCurrency(summary.totals.manpowerTotal)}</td>
                     </tr>
                   </tbody>

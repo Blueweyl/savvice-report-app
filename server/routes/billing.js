@@ -114,6 +114,44 @@ router.get('/records', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/billing/auto-days?month=5&year=2026 — auto-calculated days from attendance for each billing_manpower person
+router.get('/auto-days', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    if (!month || !year) {
+      return res.status(400).json({ error: 'month and year are required' });
+    }
+
+    const result = await pool.query(`
+      SELECT bm.id as billing_manpower_id, bm.name, bm.daily_rate,
+        COALESCE((
+          SELECT COUNT(*) FROM attendance a
+          JOIN manpower m ON a.manpower_id = m.id
+          WHERE LOWER(TRIM(m.name)) = LOWER(TRIM(bm.name))
+          AND a.status = 'present'
+          AND EXTRACT(MONTH FROM a.attendance_date) = $1
+          AND EXTRACT(YEAR FROM a.attendance_date) = $2
+        ), 0)::int as days_present
+      FROM billing_manpower bm
+      WHERE bm.is_active = true
+      ORDER BY bm.team, bm.id
+    `, [month, year]);
+
+    const rows = result.rows.map(r => ({
+      billing_manpower_id: r.billing_manpower_id,
+      name: r.name,
+      days_present: r.days_present,
+      daily_rate: parseFloat(r.daily_rate),
+      auto_amount: parseFloat((r.days_present * parseFloat(r.daily_rate)).toFixed(2)),
+    }));
+
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching auto-days from attendance:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/billing/summary?month=5&year=2026 — calculate billing summary
 router.get('/summary', authenticate, requireAdmin, async (req, res) => {
   try {
@@ -134,9 +172,17 @@ router.get('/summary', authenticate, requireAdmin, async (req, res) => {
       ORDER BY e.category, e.id
     `, [month, year]);
 
-    // Get manpower items with their billing records
+    // Get manpower items with their billing records AND auto-calculated attendance days
     const mpResult = await pool.query(`
-      SELECT m.*, COALESCE(br.days_used, 0) as days_used, COALESCE(br.amount, 0) as amount
+      SELECT m.*, COALESCE(br.days_used, 0) as days_used, COALESCE(br.amount, 0) as amount,
+        COALESCE((
+          SELECT COUNT(*) FROM attendance a
+          JOIN manpower mp ON a.manpower_id = mp.id
+          WHERE LOWER(TRIM(mp.name)) = LOWER(TRIM(m.name))
+          AND a.status = 'present'
+          AND EXTRACT(MONTH FROM a.attendance_date) = $1
+          AND EXTRACT(YEAR FROM a.attendance_date) = $2
+        ), 0)::int as attendance_days
       FROM billing_manpower m
       LEFT JOIN billing_records br ON br.billing_type = 'manpower'
         AND br.reference_id = m.id
