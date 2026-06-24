@@ -376,42 +376,59 @@ async function init() {
     );
   }
 
-  // Seed billing manpower
+  // Add billing_group column if missing
+  try { await pool.query("ALTER TABLE billing_manpower ADD COLUMN IF NOT EXISTS billing_group VARCHAR(100) DEFAULT 'Bridge RM & Epoxy'"); } catch (e) {}
+
+  // Clean duplicates — delete old billing manpower and re-seed
+  await pool.query("DELETE FROM billing_manpower");
+
+  // Seed billing manpower: [team, position, name, description, daily_rate, billing_group]
   const BILLING_MANPOWER = [
-    ['Admin', 'Supervisor', 'Newell Gatchalian', 'Supervisor (6 days, day shift, 8 hours)', 0],
-    ['Admin', 'Admin Assistant', 'Jinky Quismundo', 'Admin assistant (6 days, day shift, 8 hours)', 0],
-    ['Routine Maintenance', 'Leadman/Driver', 'TANJECO, PIJAY C.', 'Driver (6 days, 8 hours shift)', 1081.60],
-    ['Routine Maintenance', 'Skilled', 'BILLONES, JUSTIN B.', 'Skilled labor (6 days, 8 hours)', 812.97],
-    ['Routine Maintenance', 'Crew', 'ALCORIZA, IGNACIO JR. C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Routine Maintenance', 'Crew', 'ANGELO, ALVIN G.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Routine Maintenance', 'Crew', 'BLANZA, JOVEN B.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Routine Maintenance', 'Crew', 'MIRANDA, ROCKY B.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Routine Maintenance', 'Crew', 'CANDELARIA, RICHARD S.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Routine Maintenance', 'Crew', 'SEBUC, CRISOSTOMO G.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 1', 'Leadman/Driver', 'MIRANDA, ALLAN P.', 'Driver (6 days, 8 hours)', 1081.60],
-    ['Epoxy Team 1', 'Skilled', 'DORDULO, ELMER M.', 'Skilled labor (6 days, 8 hours)', 812.97],
-    ['Epoxy Team 1', 'Skilled', 'LOZANO, EDWIN S.', 'Skilled labor (6 days, 8 hours)', 812.97],
-    ['Epoxy Team 1', 'Crew', 'AQUINO, R-JAY JOHN C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 1', 'Crew', 'DE GUZMAN, MARK JOSEPH F.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 1', 'Crew', 'DELA CRUZ, EDBRYAN P.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 1', 'Crew', 'DUNGCA, MARK IAN T.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 1', 'Crew', 'MANESE, JOHNRY C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 1', 'Crew', 'PANGILINAN, EROLL M.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 2', 'Leadman/Driver', 'MARTINEZ, CEDERICK A.', 'Driver (6 days, 8 hours)', 1081.60],
-    ['Epoxy Team 2', 'Skilled', 'GALANG, ALVIN G.', 'Skilled labor (6 days, 8 hours)', 812.97],
-    ['Epoxy Team 2', 'Skilled', 'RIVERA, GILBERT O.', 'Skilled labor (6 days, 8 hours)', 812.97],
-    ['Epoxy Team 2', 'Crew', 'CABUNAG, IVAN P.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 2', 'Crew', 'ENRIQUEZ, AJ D.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 2', 'Crew', 'OCCIDENTAL, JAYPEE T.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 2', 'Crew', 'ORTILLO, EDGAR A.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 2', 'Crew', 'ROTAMULA, VOLTAIRE O.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
-    ['Epoxy Team 2', 'Crew', 'TAYCO, JOSHUA ANDREI A.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    // === BRIDGE RM & EPOXY ===
+    ['Admin', 'Supervisor', 'NEWELL GATCHALIAN', 'Supervisor (6 days, day shift, 8 hours)', 0, 'Bridge RM & Epoxy'],
+    ['Admin', 'Admin Assistant', 'LLAGAS, JINKY Q.', 'Admin assistant (6 days, day shift, 8 hours)', 0, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Leadman/Driver', 'TANJECO, PIJAY C.', 'Driver (6 days, 8 hours shift)', 1081.60, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Skilled', 'BILLONES, JUSTIN B.', 'Skilled labor (6 days, 8 hours)', 812.97, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Crew', 'ALCORIZA, IGNACIO JR. C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Crew', 'ANGELO, ALVIN G.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Crew', 'BLANZA, JOVEN B.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Crew', 'MIRANDA, ROCKY B.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Crew', 'CANDELARIA, RICHARD S.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Routine Maintenance', 'Crew', 'SEBUC, CRISOSTOMO G.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Leadman/Driver', 'MIRANDA, ALLAN P.', 'Driver (6 days, 8 hours)', 1081.60, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Skilled', 'DORDULO, ELMER M.', 'Skilled labor (6 days, 8 hours)', 812.97, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Skilled', 'LOZANO, EDWIN S.', 'Skilled labor (6 days, 8 hours)', 812.97, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Crew', 'AQUINO, R-JAY JOHN C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Crew', 'DE GUZMAN, MARK JOSEPH F.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Crew', 'DELA CRUZ, EDBRYAN P.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Crew', 'DUNGCA, MARK IAN T.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Crew', 'MANESE, JOHNRY C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 1', 'Crew', 'PANGILINAN, EROLL M.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Leadman/Driver', 'MARTINEZ, CEDERICK A.', 'Driver (6 days, 8 hours)', 1081.60, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Skilled', 'GALANG, ALVIN G.', 'Skilled labor (6 days, 8 hours)', 812.97, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Skilled', 'RIVERA, GILBERT O.', 'Skilled labor (6 days, 8 hours)', 812.97, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Crew', 'CABUNAG, IVAN P.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Crew', 'ENRIQUEZ, AJ D.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Crew', 'OCCIDENTAL, JAYPEE T.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Crew', 'ORTILLO, EDGAR A.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Crew', 'ROTAMULA, VOLTAIRE O.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    ['Epoxy Team 2', 'Crew', 'TAYCO, JOSHUA ANDREI A.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Bridge RM & Epoxy'],
+    // === SEGMENT 10 ===
+    ['Bridge Segment 10', 'Leadman/Driver', 'BUTIONG, GLENN A.', 'Driver (6 days, 8 hours shift)', 1081.60, 'Segment 10'],
+    ['Bridge Segment 10', 'Skilled', 'BALAGAO, ARTCHIE L.', 'Skilled labor (6 days, 8 hours)', 812.97, 'Segment 10'],
+    ['Bridge Segment 10', 'Crew', 'BALMEO, ABRAHAM P.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Segment 10'],
+    ['Bridge Segment 10', 'Crew', 'BAYLON, JUSTINE GREGG F.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Segment 10'],
+    ['Bridge Segment 10', 'Crew', 'BERNARDO, JOHN CHRISTIAN R.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Segment 10'],
+    ['Bridge Segment 10', 'Crew', 'DE MESA, GLEN JORICK M.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Segment 10'],
+    ['Bridge Segment 10', 'Crew', 'DIAZ, JAMES BARRON O.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Segment 10'],
+    ['Bridge Segment 10', 'Crew', 'ENRIQUEZ, IAN T.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Segment 10'],
+    ['Bridge Segment 10', 'Crew', 'FAUSTINO, ROLANDO G.', 'Non-Skilled labor (6 days, 8 hours)', 765.06, 'Segment 10'],
   ];
 
-  for (const [team, pos, name, desc, rate] of BILLING_MANPOWER) {
+  for (const [team, pos, name, desc, rate, group] of BILLING_MANPOWER) {
     await pool.query(
-      'INSERT INTO billing_manpower (team, position, name, description, daily_rate) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
-      [team, pos, name, desc, rate]
+      'INSERT INTO billing_manpower (team, position, name, description, daily_rate, billing_group) VALUES ($1,$2,$3,$4,$5,$6)',
+      [team, pos, name, desc, rate, group]
     );
   }
   console.log('Billing data seeded');

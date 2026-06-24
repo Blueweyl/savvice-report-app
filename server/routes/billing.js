@@ -41,7 +41,7 @@ router.get('/equipment', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
-// GET /api/billing/manpower — list all manpower, optional ?team= filter
+// GET /api/billing/manpower — list all manpower, optional ?team= and ?billing_group= filter
 router.get('/manpower', authenticate, requireAdmin, async (req, res) => {
   try {
     let sql = 'SELECT * FROM billing_manpower WHERE is_active = true';
@@ -50,7 +50,11 @@ router.get('/manpower', authenticate, requireAdmin, async (req, res) => {
       params.push(req.query.team);
       sql += ` AND team = $${params.length}`;
     }
-    sql += ' ORDER BY team, id';
+    if (req.query.billing_group) {
+      params.push(req.query.billing_group);
+      sql += ` AND billing_group = $${params.length}`;
+    }
+    sql += ' ORDER BY billing_group, team, id';
     const result = await pool.query(sql, params);
     res.json(result.rows);
   } catch (err) {
