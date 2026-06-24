@@ -42,6 +42,11 @@ export default function Layout({ children }) {
               <Link to="/attendance" className="text-sm text-gray-300 hover:text-white transition">
                 Attendance
               </Link>
+              {user?.role === 'admin' && (
+                <Link to="/billing" className="text-sm text-gray-300 hover:text-white transition">
+                  Billing
+                </Link>
+              )}
             </nav>
           </div>
           {user && (

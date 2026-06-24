@@ -301,6 +301,121 @@ async function init() {
     );
   `);
 
+  // ── Billing tables ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_equipment (
+      id SERIAL PRIMARY KEY,
+      category VARCHAR(100),
+      equipment_name VARCHAR(255) NOT NULL,
+      body_no VARCHAR(100),
+      assignment VARCHAR(255),
+      unit VARCHAR(50) DEFAULT 'nos.',
+      unit_rate DECIMAL(12,2) DEFAULT 0,
+      contracted_qty DECIMAL(10,2) DEFAULT 0,
+      daily_rate DECIMAL(12,2) DEFAULT 0,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_manpower (
+      id SERIAL PRIMARY KEY,
+      team VARCHAR(100),
+      position VARCHAR(255),
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      daily_rate DECIMAL(12,2) DEFAULT 0,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_records (
+      id SERIAL PRIMARY KEY,
+      billing_type VARCHAR(20) CHECK (billing_type IN ('equipment', 'manpower', 'materials')),
+      reference_id INTEGER,
+      billing_month INTEGER,
+      billing_year INTEGER,
+      days_used DECIMAL(10,2) DEFAULT 0,
+      amount DECIMAL(12,2) DEFAULT 0,
+      remarks TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(billing_type, reference_id, billing_month, billing_year)
+    );
+  `);
+
+  // Seed billing equipment
+  const BILLING_EQUIPMENT = [
+    ['Vehicles', 'Fassi Truck', '', 'Bridge RM', 'nos.', 209762.09, 0.25, 1724.07],
+    ['Vehicles', 'Fassi with man basket', '', 'Bridge RM', 'nos.', 209762.09, 0.4, 2758.52],
+    ['Vehicles', 'Water truck', '', 'Bridge RM', 'nos.', 162848.50, 0.25, 1338.48],
+    ['Vehicles', 'Skid Loader', '', 'Bridge RM', 'nos.', 88573.91, 0.5, 1456.01],
+    ['Vehicles', 'Service Vehicle (RM)', 'NFJ 6654', 'Bridge RM', 'nos.', 120252.98, 1, 4610.34],
+    ['Vehicles', 'Service Vehicle (EPOXY)', 'NCG 5500', 'EPOXY BRIDGE 1', 'nos.', 120252.98, 2, 4610.34],
+    ['Vehicles', 'Service Vehicle (SEGMENT 10)', 'NEO 5124', 'EPOXY BRIDGE 2', 'nos.', 131224.24, 1, 5030.96],
+    ['Incident Response', 'Flashing Arrow', '', '', 'nos.', 14630.21, 2.5, 480.99],
+    ['Incident Response', 'Tower Light', '', '', 'nos.', 35066.96, 0.67, 768.59],
+    ['Incident Response', 'Advance warning sign', '', '', 'sets', 12378.73, 1.67, 406.97],
+    ['Vegetation Control', 'Grass Cutter (RM)', '', '', 'nos.', 24585, 1, 942.56],
+    ['Vegetation Control', 'Grass Cutter (SEG10)', '', '', 'nos.', 24585, 1, 942.56],
+    ['Cleaning Tools', 'Pressure washer (RM)', '', '', 'nos.', 6063.99, 1, 232.49],
+    ['Cleaning Tools', 'Pressure washer (SEG10)', '', '', 'nos.', 6063.99, 1, 232.49],
+    ['Bridge Epoxy', 'Genset Optimax 5kva', 'RM-GS-1', '', 'nos.', 13268.85, 2, 508.71],
+    ['Bridge Epoxy', 'Wagner Epoxy injection pump', 'RM-IJM-01', '', 'nos.', 8980.16, 2, 344.29],
+    ['Bridge Epoxy', 'Bosch Grinder GWS060', 'RM-G-01', '', 'nos.', 540.18, 3, 20.71],
+    ['Bridge Epoxy', 'Bosch Blower', 'RM-HBM-01', '', 'nos.', 646.58, 2, 24.79],
+    ['Bridge Epoxy', 'Bosch Rotary drill GBH2-24 RE', 'RM-RD-01', '', 'nos.', 2578.13, 3, 98.84],
+  ];
+
+  for (const [cat, name, body, assign, unit, urate, qty, drate] of BILLING_EQUIPMENT) {
+    await pool.query(
+      'INSERT INTO billing_equipment (category, equipment_name, body_no, assignment, unit, unit_rate, contracted_qty, daily_rate) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING',
+      [cat, name, body, assign, unit, urate, qty, drate]
+    );
+  }
+
+  // Seed billing manpower
+  const BILLING_MANPOWER = [
+    ['Admin', 'Supervisor', 'Newell Gatchalian', 'Supervisor (6 days, day shift, 8 hours)', 0],
+    ['Admin', 'Admin Assistant', 'Jinky Quismundo', 'Admin assistant (6 days, day shift, 8 hours)', 0],
+    ['Routine Maintenance', 'Leadman/Driver', 'TANJECO, PIJAY C.', 'Driver (6 days, 8 hours shift)', 1081.60],
+    ['Routine Maintenance', 'Skilled', 'BILLONES, JUSTIN B.', 'Skilled labor (6 days, 8 hours)', 812.97],
+    ['Routine Maintenance', 'Crew', 'ALCORIZA, IGNACIO JR. C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Routine Maintenance', 'Crew', 'ANGELO, ALVIN G.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Routine Maintenance', 'Crew', 'BLANZA, JOVEN B.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Routine Maintenance', 'Crew', 'MIRANDA, ROCKY B.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Routine Maintenance', 'Crew', 'CANDELARIA, RICHARD S.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Routine Maintenance', 'Crew', 'SEBUC, CRISOSTOMO G.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 1', 'Leadman/Driver', 'MIRANDA, ALLAN P.', 'Driver (6 days, 8 hours)', 1081.60],
+    ['Epoxy Team 1', 'Skilled', 'DORDULO, ELMER M.', 'Skilled labor (6 days, 8 hours)', 812.97],
+    ['Epoxy Team 1', 'Skilled', 'LOZANO, EDWIN S.', 'Skilled labor (6 days, 8 hours)', 812.97],
+    ['Epoxy Team 1', 'Crew', 'AQUINO, R-JAY JOHN C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 1', 'Crew', 'DE GUZMAN, MARK JOSEPH F.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 1', 'Crew', 'DELA CRUZ, EDBRYAN P.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 1', 'Crew', 'DUNGCA, MARK IAN T.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 1', 'Crew', 'MANESE, JOHNRY C.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 1', 'Crew', 'PANGILINAN, EROLL M.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 2', 'Leadman/Driver', 'MARTINEZ, CEDERICK A.', 'Driver (6 days, 8 hours)', 1081.60],
+    ['Epoxy Team 2', 'Skilled', 'GALANG, ALVIN G.', 'Skilled labor (6 days, 8 hours)', 812.97],
+    ['Epoxy Team 2', 'Skilled', 'RIVERA, GILBERT O.', 'Skilled labor (6 days, 8 hours)', 812.97],
+    ['Epoxy Team 2', 'Crew', 'CABUNAG, IVAN P.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 2', 'Crew', 'ENRIQUEZ, AJ D.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 2', 'Crew', 'OCCIDENTAL, JAYPEE T.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 2', 'Crew', 'ORTILLO, EDGAR A.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 2', 'Crew', 'ROTAMULA, VOLTAIRE O.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+    ['Epoxy Team 2', 'Crew', 'TAYCO, JOSHUA ANDREI A.', 'Non-Skilled labor (6 days, 8 hours)', 765.06],
+  ];
+
+  for (const [team, pos, name, desc, rate] of BILLING_MANPOWER) {
+    await pool.query(
+      'INSERT INTO billing_manpower (team, position, name, description, daily_rate) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
+      [team, pos, name, desc, rate]
+    );
+  }
+  console.log('Billing data seeded');
+
   for (const dept of DEPARTMENTS) {
     const res = await pool.query(
       'INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = $1 RETURNING id',
