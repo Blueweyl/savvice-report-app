@@ -204,8 +204,8 @@ router.get('/summary', authenticate, requireAdmin, async (req, res) => {
     const manpowerTotal = manpowerItems.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
 
     const subTotalA = equipmentTotal + manpowerTotal; // Direct Resources
-    const gaOverhead = subTotalA * 0.15; // 15% G&A Overhead
-    const profit = (subTotalA + gaOverhead) * 0.10; // 10% Profit
+    const gaOverhead = subTotalA * 0.11; // 11% G&A Overhead
+    const profit = subTotalA * 0.15; // 15% Profit
     const vat = (subTotalA + gaOverhead + profit) * 0.12; // 12% VAT
     const grandTotal = subTotalA + gaOverhead + profit + vat;
 
@@ -817,18 +817,18 @@ router.get('/export', authenticateBilling, async (req, res) => {
       daysAmount: totalEquip.daysAmount + totalManpower.daysAmount + totalMaterials.daysAmount,
     };
 
-    // B. G&A OVERHEAD (15% of A)
+    // E. G&A Overhead (11% of C)
     const gaOverhead = {
+      amount: directResources.amount * 0.11,
+      actualAmount: directResources.actualAmount * 0.11,
+      daysAmount: directResources.daysAmount * 0.11,
+    };
+
+    // F. Profit (15% of C)
+    const profit = {
       amount: directResources.amount * 0.15,
       actualAmount: directResources.actualAmount * 0.15,
       daysAmount: directResources.daysAmount * 0.15,
-    };
-
-    // C. PROFIT (10% of A+B)
-    const profit = {
-      amount: (directResources.amount + gaOverhead.amount) * 0.10,
-      actualAmount: (directResources.actualAmount + gaOverhead.actualAmount) * 0.10,
-      daysAmount: (directResources.daysAmount + gaOverhead.daysAmount) * 0.10,
     };
 
     // D. VAT 12% of (A+B+C)
@@ -846,11 +846,11 @@ router.get('/export', authenticateBilling, async (req, res) => {
     };
 
     const billingComputation = [
-      { label: 'A. DIRECT RESOURCES', totals: directResources },
-      { label: 'B. GENERAL & ADMINISTRATIVE OVERHEAD, CONTINGENCY & MISCELLANEOUS (15%)', totals: gaOverhead },
-      { label: 'C. PROFIT (10%)', totals: profit },
-      { label: 'D. VAT 12%', totals: vat },
-      { label: 'GRAND TOTAL', totals: grandTotal },
+      { label: 'INDIRECT COST', totals: directResources },
+      { label: 'E : General and administrative, Overhead, Contingencies and Miscellaneous (11%)', totals: gaOverhead },
+      { label: 'F : Profit (15% of C)', totals: profit },
+      { label: 'G : VAT (12% of C+E+F)', totals: vat },
+      { label: 'TOTAL COST (monthly)', totals: grandTotal },
     ];
 
     billingComputation.forEach((item, idx) => {
@@ -1008,17 +1008,17 @@ router.get('/export', authenticateBilling, async (req, res) => {
     function writeCAGrandTotal(sheet, startRow, eqTotal, mpTotal, matTotal) {
       let r = startRow;
       const directA = eqTotal.billed + mpTotal.billed + matTotal.billed;
-      const gaB = directA * 0.15;
-      const profitC = (directA + gaB) * 0.10;
-      const vatD = (directA + gaB + profitC) * 0.12;
-      const grand = directA + gaB + profitC + vatD;
+      const gaE = directA * 0.11;
+      const profitF = directA * 0.15;
+      const vatG = (directA + gaE + profitF) * 0.12;
+      const grand = directA + gaE + profitF + vatG;
 
       const computeRows = [
-        { label: 'A. DIRECT RESOURCES', value: directA },
-        { label: 'B. GENERAL & ADMINISTRATIVE OVERHEAD (15%)', value: gaB },
-        { label: 'C. PROFIT (10%)', value: profitC },
-        { label: 'D. VAT 12%', value: vatD },
-        { label: 'GRAND TOTAL', value: grand },
+        { label: 'INDIRECT COST', value: directA },
+        { label: 'E : General and administrative, Overhead, Contingencies and Miscellaneous (11%)', value: gaE },
+        { label: 'F : Profit (15% of C)', value: profitF },
+        { label: 'G : VAT (12% of C+E+F)', value: vatG },
+        { label: 'TOTAL COST (monthly)', value: grand },
       ];
 
       computeRows.forEach((cr, idx) => {
