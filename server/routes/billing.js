@@ -281,7 +281,7 @@ router.get('/export', authenticateBilling, async (req, res) => {
 
     // ── Equipment Sheet ──
     const eqSheet = workbook.addWorksheet('Equipment Billing');
-    eqSheet.mergeCells('A1:I1');
+    eqSheet.mergeCells('A1:J1');
     const eqTitle = eqSheet.getCell('A1');
     eqTitle.value = `SAVVICE Corporation - Bridge Department Equipment Billing | ${monthNames[parseInt(month)]} ${year}`;
     eqTitle.font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -290,7 +290,6 @@ router.get('/export', authenticateBilling, async (req, res) => {
     eqSheet.getRow(1).height = 36;
 
     const eqHeaders = ['Category', 'Equipment Name', 'Body No.', 'Assignment', 'Unit', 'Unit Rate', 'Contracted Qty', 'Daily Rate', 'Days Used', 'Amount'];
-    eqSheet.mergeCells('A1:J1');
     const eqHeaderRow = eqSheet.getRow(2);
     eqHeaders.forEach((h, i) => {
       const cell = eqHeaderRow.getCell(i + 1);
