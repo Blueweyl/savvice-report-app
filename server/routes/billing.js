@@ -238,7 +238,7 @@ router.get('/export', authenticateBilling, async (req, res) => {
       return res.status(400).json({ error: 'month and year are required' });
     }
 
-    // Fetch data
+    // Fetch equipment with billing records
     const equipResult = await pool.query(`
       SELECT e.*, COALESCE(br.days_used, 0) as days_used, COALESCE(br.amount, 0) as amount
       FROM billing_equipment e
@@ -250,42 +250,79 @@ router.get('/export', authenticateBilling, async (req, res) => {
       ORDER BY e.category, e.id
     `, [month, year]);
 
+    // Fetch manpower with billing records AND attendance days
     const mpResult = await pool.query(`
-      SELECT m.*, COALESCE(br.days_used, 0) as days_used, COALESCE(br.amount, 0) as amount
+      SELECT m.*, COALESCE(br.days_used, 0) as days_used, COALESCE(br.amount, 0) as amount,
+        COALESCE((
+          SELECT COUNT(*) FROM attendance a
+          JOIN manpower mp ON a.manpower_id = mp.id
+          WHERE LOWER(TRIM(mp.name)) = LOWER(TRIM(m.name))
+          AND a.status = 'present'
+          AND EXTRACT(MONTH FROM a.attendance_date) = $1
+          AND EXTRACT(YEAR FROM a.attendance_date) = $2
+        ), 0)::int as attendance_days
       FROM billing_manpower m
       LEFT JOIN billing_records br ON br.billing_type = 'manpower'
         AND br.reference_id = m.id
         AND br.billing_month = $1
         AND br.billing_year = $2
       WHERE m.is_active = true
-      ORDER BY m.team, m.id
+      ORDER BY m.billing_group, m.team, m.id
+    `, [month, year]);
+
+    // Fetch materials billing records
+    const matResult = await pool.query(`
+      SELECT * FROM billing_records
+      WHERE billing_type = 'materials'
+        AND billing_month = $1
+        AND billing_year = $2
     `, [month, year]);
 
     const equipmentItems = equipResult.rows;
     const manpowerItems = mpResult.rows;
-
-    const equipmentTotal = equipmentItems.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-    const manpowerTotal = manpowerItems.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
-    const subTotalA = equipmentTotal + manpowerTotal;
-    const gaOverhead = subTotalA * 0.15;
-    const profit = (subTotalA + gaOverhead) * 0.10;
-    const vat = (subTotalA + gaOverhead + profit) * 0.12;
-    const grandTotal = subTotalA + gaOverhead + profit + vat;
+    const materialRecords = matResult.rows;
 
     const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthName = monthNames[parseInt(month)];
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Savvice RM System';
     workbook.created = new Date();
 
-    // ── Equipment Sheet ──
+    // ── Style helpers ──
+    const darkBlue = 'FF1E3A5F';
+    const blue = 'FF2563EB';
+    const whiteFont = { color: { argb: 'FFFFFFFF' } };
+    const numFmt2 = '#,##0.00';
+    const thinBorder = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+    const allBorder = {
+      top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+      bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+      left: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+      right: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+    };
+
+    function applyHeaderFill(cell, bgColor) {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+    }
+    function setNum(cell, val) {
+      cell.value = val;
+      cell.numFmt = numFmt2;
+    }
+    function setBorderedRow(row, colStart, colEnd) {
+      for (let c = colStart; c <= colEnd; c++) {
+        row.getCell(c).border = allBorder;
+      }
+    }
+
+    // ── Equipment Sheet (unchanged) ──
     const eqSheet = workbook.addWorksheet('Equipment Billing');
     eqSheet.mergeCells('A1:J1');
     const eqTitle = eqSheet.getCell('A1');
-    eqTitle.value = `SAVVICE Corporation - Bridge Department Equipment Billing | ${monthNames[parseInt(month)]} ${year}`;
-    eqTitle.font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-    eqTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+    eqTitle.value = `SAVVICE Corporation - Bridge Department Equipment Billing | ${monthName} ${year}`;
+    eqTitle.font = { size: 14, bold: true, ...whiteFont };
+    applyHeaderFill(eqTitle, darkBlue);
     eqTitle.alignment = { horizontal: 'center', vertical: 'middle' };
     eqSheet.getRow(1).height = 36;
 
@@ -294,14 +331,13 @@ router.get('/export', authenticateBilling, async (req, res) => {
     eqHeaders.forEach((h, i) => {
       const cell = eqHeaderRow.getCell(i + 1);
       cell.value = h;
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      cell.font = { bold: true, ...whiteFont, size: 10 };
+      applyHeaderFill(cell, blue);
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
     });
     eqHeaderRow.height = 24;
 
-    const eqColWidths = [16, 30, 14, 18, 8, 14, 14, 14, 12, 14];
-    eqColWidths.forEach((w, i) => { eqSheet.getColumn(i + 1).width = w; });
+    [16, 30, 14, 18, 8, 14, 14, 14, 12, 14].forEach((w, i) => { eqSheet.getColumn(i + 1).width = w; });
 
     equipmentItems.forEach((eq, idx) => {
       const row = eqSheet.getRow(idx + 3);
@@ -315,30 +351,29 @@ router.get('/export', authenticateBilling, async (req, res) => {
       row.getCell(8).value = parseFloat(eq.daily_rate);
       row.getCell(9).value = parseFloat(eq.days_used);
       row.getCell(10).value = parseFloat(eq.amount);
-      // Number format
-      [6, 8, 10].forEach(c => { row.getCell(c).numFmt = '#,##0.00'; });
+      [6, 8, 10].forEach(c => { row.getCell(c).numFmt = numFmt2; });
       const bg = idx % 2 === 0 ? 'FFFFFFFF' : 'FFFFFDE7';
       for (let c = 1; c <= 10; c++) {
         row.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-        row.getCell(c).border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+        row.getCell(c).border = thinBorder;
       }
     });
 
-    // Equipment total row
+    const equipmentTotal = equipmentItems.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
     const eqTotalRow = eqSheet.getRow(equipmentItems.length + 3);
     eqTotalRow.getCell(1).value = 'EQUIPMENT TOTAL';
     eqTotalRow.getCell(1).font = { bold: true };
     eqTotalRow.getCell(10).value = equipmentTotal;
-    eqTotalRow.getCell(10).numFmt = '#,##0.00';
+    eqTotalRow.getCell(10).numFmt = numFmt2;
     eqTotalRow.getCell(10).font = { bold: true };
 
-    // ── Manpower Sheet ──
+    // ── Manpower Sheet (unchanged) ──
     const mpSheet = workbook.addWorksheet('Manpower Billing');
     mpSheet.mergeCells('A1:G1');
     const mpTitle = mpSheet.getCell('A1');
-    mpTitle.value = `SAVVICE Corporation - Bridge Department Manpower Billing | ${monthNames[parseInt(month)]} ${year}`;
-    mpTitle.font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-    mpTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+    mpTitle.value = `SAVVICE Corporation - Bridge Department Manpower Billing | ${monthName} ${year}`;
+    mpTitle.font = { size: 14, bold: true, ...whiteFont };
+    applyHeaderFill(mpTitle, darkBlue);
     mpTitle.alignment = { horizontal: 'center', vertical: 'middle' };
     mpSheet.getRow(1).height = 36;
 
@@ -347,15 +382,15 @@ router.get('/export', authenticateBilling, async (req, res) => {
     mpHeaders.forEach((h, i) => {
       const cell = mpHeaderRow.getCell(i + 1);
       cell.value = h;
-      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+      cell.font = { bold: true, ...whiteFont, size: 10 };
+      applyHeaderFill(cell, blue);
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
     });
     mpHeaderRow.height = 24;
 
-    const mpColWidths = [18, 16, 28, 36, 14, 12, 14];
-    mpColWidths.forEach((w, i) => { mpSheet.getColumn(i + 1).width = w; });
+    [18, 16, 28, 36, 14, 12, 14].forEach((w, i) => { mpSheet.getColumn(i + 1).width = w; });
 
+    const manpowerTotal = manpowerItems.reduce((sum, m) => sum + parseFloat(m.amount || 0), 0);
     manpowerItems.forEach((mp, idx) => {
       const row = mpSheet.getRow(idx + 3);
       row.getCell(1).value = mp.team;
@@ -365,11 +400,11 @@ router.get('/export', authenticateBilling, async (req, res) => {
       row.getCell(5).value = parseFloat(mp.daily_rate);
       row.getCell(6).value = parseFloat(mp.days_used);
       row.getCell(7).value = parseFloat(mp.amount);
-      [5, 7].forEach(c => { row.getCell(c).numFmt = '#,##0.00'; });
+      [5, 7].forEach(c => { row.getCell(c).numFmt = numFmt2; });
       const bg = idx % 2 === 0 ? 'FFFFFFFF' : 'FFFFFDE7';
       for (let c = 1; c <= 7; c++) {
         row.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-        row.getCell(c).border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+        row.getCell(c).border = thinBorder;
       }
     });
 
@@ -377,60 +412,703 @@ router.get('/export', authenticateBilling, async (req, res) => {
     mpTotalRow.getCell(1).value = 'MANPOWER TOTAL';
     mpTotalRow.getCell(1).font = { bold: true };
     mpTotalRow.getCell(7).value = manpowerTotal;
-    mpTotalRow.getCell(7).numFmt = '#,##0.00';
+    mpTotalRow.getCell(7).numFmt = numFmt2;
     mpTotalRow.getCell(7).font = { bold: true };
 
-    // ── Summary Sheet ──
-    const sumSheet = workbook.addWorksheet('Billing Summary');
-    sumSheet.mergeCells('A1:C1');
-    const sumTitle = sumSheet.getCell('A1');
-    sumTitle.value = `SAVVICE Corporation - Bridge Billing Summary | ${monthNames[parseInt(month)]} ${year}`;
-    sumTitle.font = { size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-    sumTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
-    sumTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-    sumSheet.getRow(1).height = 36;
+    // ═══════════════════════════════════════════════════════════════
+    // ── SHEET: SUMMARY — matches "SUMMARY (2)" from original ──
+    // ═══════════════════════════════════════════════════════════════
+    const sumSheet = workbook.addWorksheet('SUMMARY');
 
-    sumSheet.getColumn(1).width = 40;
-    sumSheet.getColumn(2).width = 20;
-    sumSheet.getColumn(3).width = 20;
+    // Column widths: B=30, C=8, D=14, E=12, F=16, G=14, H=14, I=16, J=14, K=18, L=18
+    sumSheet.getColumn(1).width = 4;   // A (spacer)
+    sumSheet.getColumn(2).width = 34;  // B Description
+    sumSheet.getColumn(3).width = 8;   // C Unit
+    sumSheet.getColumn(4).width = 14;  // D Unit Rate
+    sumSheet.getColumn(5).width = 12;  // E CONTRACTED
+    sumSheet.getColumn(6).width = 16;  // F Amount
+    sumSheet.getColumn(7).width = 16;  // G ACTUAL DEPLOYMENT
+    sumSheet.getColumn(8).width = 16;  // H No. of Days Breakdown
+    sumSheet.getColumn(9).width = 16;  // I MONTHLY RATE
+    sumSheet.getColumn(10).width = 14; // J DAILY RATE
+    sumSheet.getColumn(11).width = 20; // K TOTAL AMOUNT (ACTUAL)
+    sumSheet.getColumn(12).width = 20; // L TOTAL AMOUNT (DAYS BREAKDOWN)
 
-    const summaryData = [
-      ['Description', 'Amount', ''],
-      ['A.1 Equipment', equipmentTotal, ''],
-      ['A.2 Manpower', manpowerTotal, ''],
-      ['Sub-total A (Direct Resources)', subTotalA, ''],
-      ['B. General & Admin Overhead (15%)', gaOverhead, ''],
-      ['C. Profit (10%)', profit, ''],
-      ['D. VAT (12%)', vat, ''],
-      ['GRAND TOTAL', grandTotal, ''],
+    // Helper: build a lookup of equipment by name for days_used
+    const eqByName = {};
+    for (const eq of equipmentItems) {
+      eqByName[eq.equipment_name] = eq;
+    }
+
+    // Helper: sum attendance_days for manpower by team+position type
+    // Group manpower items by billing_group and position category
+    function getManpowerGroup(billingGroup, positionFilter) {
+      return manpowerItems.filter(m => {
+        const grp = (m.billing_group || '').toLowerCase();
+        const pos = (m.position || '').toLowerCase();
+        if (billingGroup === 'rm') {
+          return grp.includes('bridge rm') && ['admin', 'routine maintenance'].includes((m.team || '').toLowerCase());
+        }
+        if (billingGroup === 'epoxy') {
+          return grp.includes('bridge rm') && (m.team || '').toLowerCase().startsWith('epoxy');
+        }
+        if (billingGroup === 'seg10') {
+          return grp.includes('segment 10');
+        }
+        return false;
+      }).filter(m => {
+        if (!positionFilter) return true;
+        const pos = (m.position || '').toLowerCase();
+        if (positionFilter === 'supervisor') return pos === 'supervisor';
+        if (positionFilter === 'admin') return pos === 'admin assistant';
+        if (positionFilter === 'warehouse') return pos === 'warehouse man';
+        if (positionFilter === 'driver') return pos.includes('driver');
+        if (positionFilter === 'skilled') return pos === 'skilled';
+        if (positionFilter === 'crew') return pos === 'crew';
+        return false;
+      });
+    }
+
+    function sumDaysUsed(items) {
+      return items.reduce((s, m) => s + parseFloat(m.days_used || 0), 0);
+    }
+    function sumAttendanceDays(items) {
+      return items.reduce((s, m) => s + parseInt(m.attendance_days || 0, 10), 0);
+    }
+
+    // Row 7: Title
+    sumSheet.mergeCells('B7:L7');
+    const sumTitleCell = sumSheet.getCell('B7');
+    sumTitleCell.value = 'NLEX CORP. - ROUTINE MAINTENANCE (BRIDGE)';
+    sumTitleCell.font = { size: 14, bold: true, ...whiteFont };
+    applyHeaderFill(sumTitleCell, darkBlue);
+    sumTitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    sumSheet.getRow(7).height = 30;
+
+    // Row 8: Period
+    sumSheet.mergeCells('B8:L8');
+    const sumPeriod = sumSheet.getCell('B8');
+    sumPeriod.value = `PERIOD: ${monthName.toUpperCase()} 01-31, ${year}`;
+    sumPeriod.font = { size: 11, bold: true, ...whiteFont };
+    applyHeaderFill(sumPeriod, darkBlue);
+    sumPeriod.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // Row 9-10: Headers (merged vertically for some)
+    const sumHeaders = [
+      { col: 2, label: 'Description', width: 1 },
+      { col: 3, label: 'Unit', width: 1 },
+      { col: 4, label: 'Unit Rate', width: 1 },
+      { col: 5, label: 'CONTRACTED', width: 1 },
+      { col: 6, label: 'Amount', width: 1 },
+      { col: 7, label: 'ACTUAL\nDEPLOYMENT', width: 1 },
+      { col: 8, label: 'No. of Days\nBreakdown', width: 1 },
+      { col: 9, label: 'MONTHLY\nRATE', width: 1 },
+      { col: 10, label: 'DAILY\nRATE', width: 1 },
+      { col: 11, label: 'TOTAL AMOUNT\n(ACTUAL)', width: 1 },
+      { col: 12, label: 'TOTAL AMOUNT\n(DAYS BREAKDOWN)', width: 1 },
     ];
 
-    summaryData.forEach((row, idx) => {
-      const r = sumSheet.getRow(idx + 2);
-      r.getCell(1).value = row[0];
-      r.getCell(2).value = row[1];
-      if (idx === 0) {
-        r.getCell(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        r.getCell(2).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
-        r.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
-      } else {
-        r.getCell(2).numFmt = '#,##0.00';
-        if (idx === summaryData.length - 1) {
-          r.getCell(1).font = { bold: true, size: 12 };
-          r.getCell(2).font = { bold: true, size: 12 };
-          r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9C4' } };
-          r.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9C4' } };
-        } else if (idx === 3) {
-          r.getCell(1).font = { bold: true };
-          r.getCell(2).font = { bold: true };
-        }
-      }
-      r.getCell(1).border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
-      r.getCell(2).border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+    // Merge rows 9-10 for headers
+    sumHeaders.forEach(h => {
+      sumSheet.mergeCells(9, h.col, 10, h.col);
+      const cell = sumSheet.getCell(9, h.col);
+      cell.value = h.label;
+      cell.font = { bold: true, size: 9, ...whiteFont };
+      applyHeaderFill(cell, blue);
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = allBorder;
     });
+    sumSheet.getRow(9).height = 20;
+    sumSheet.getRow(10).height = 20;
 
-    const filename = `billing_${monthNames[parseInt(month)]}_${year}.xlsx`;
+    // ── SUMMARY DATA ROWS ──
+    // Equipment items with their hardcoded layout
+    // We define each row as: [description, unit, unitRate, contracted, dailyRate, equipmentKey]
+    // equipmentKey maps to equipmentItems by equipment_name
+
+    const summaryEquipment = [
+      // A.1 Equipment and Vehicles (Row 12 header, rows 13-19 data)
+      { name: 'Fassi Truck', unit: 'nos.', unitRate: 209762.09, contracted: 0.25, dailyRate: 1724.07, eqKey: 'Fassi Truck' },
+      { name: 'Fassi with man basket', unit: 'nos.', unitRate: 209762.09, contracted: 0.4, dailyRate: 2758.52, eqKey: 'Fassi with man basket' },
+      { name: 'Water truck', unit: 'nos.', unitRate: 162848.50, contracted: 0.25, dailyRate: 1338.48, eqKey: 'Water truck' },
+      { name: 'Skid Loader', unit: 'nos.', unitRate: 88573.91, contracted: 0.5, dailyRate: 1456.01, eqKey: 'Skid Loader' },
+      { name: 'Service Vehicle RM', unit: 'nos.', unitRate: 120252.98, contracted: 1, dailyRate: 4610.34, eqKey: 'Service Vehicle (RM)' },
+      { name: 'Service Vehicle EPOXY', unit: 'nos.', unitRate: 120252.98, contracted: 2, dailyRate: 4610.34, eqKey: 'Service Vehicle (EPOXY)' },
+      { name: 'Service Vehicle SEG10', unit: 'nos.', unitRate: 131224.24, contracted: 1, dailyRate: 5030.96, eqKey: 'Service Vehicle (SEGMENT 10)' },
+    ];
+
+    const summaryMinorEquip = {
+      'Incident Response': [
+        { name: 'Flashing Arrow', unit: 'nos.', unitRate: 14630.21, contracted: 2.5, dailyRate: 480.99, eqKey: 'Flashing Arrow' },
+        { name: 'Tower Light', unit: 'nos.', unitRate: 35066.96, contracted: 0.67, dailyRate: 768.59, eqKey: 'Tower Light' },
+        { name: 'Advance warning sign', unit: 'sets', unitRate: 12378.73, contracted: 1.67, dailyRate: 406.97, eqKey: 'Advance warning sign' },
+      ],
+      'Vegetation Control': [
+        { name: 'Grass Cutter RM', unit: 'nos.', unitRate: 24585, contracted: 1, dailyRate: 942.56, eqKey: 'Grass Cutter (RM)' },
+        { name: 'Grass Cutter SEG10', unit: 'nos.', unitRate: 24585, contracted: 1, dailyRate: 942.56, eqKey: 'Grass Cutter (SEG10)' },
+      ],
+      'Cleaning Tools': [
+        { name: 'Pressure washer RM', unit: 'nos.', unitRate: 6063.99, contracted: 1, dailyRate: 232.49, eqKey: 'Pressure washer (RM)' },
+        { name: 'Pressure washer SEG10', unit: 'nos.', unitRate: 6063.99, contracted: 1, dailyRate: 232.49, eqKey: 'Pressure washer (SEG10)' },
+      ],
+      'Bridge (Epoxy Injection)': [
+        { name: 'Genset', unit: 'nos.', unitRate: 13268.85, contracted: 2, dailyRate: 508.71, eqKey: 'Genset Optimax 5kva' },
+        { name: 'Wagner pump', unit: 'nos.', unitRate: 8980.16, contracted: 2, dailyRate: 344.29, eqKey: 'Wagner Epoxy injection pump' },
+        { name: 'Grinder', unit: 'nos.', unitRate: 540.18, contracted: 3, dailyRate: 20.71, eqKey: 'Bosch Grinder GWS060' },
+        { name: 'Blower', unit: 'nos.', unitRate: 646.58, contracted: 2, dailyRate: 24.79, eqKey: 'Bosch Blower' },
+        { name: 'Rotary drill', unit: 'nos.', unitRate: 2578.13, contracted: 3, dailyRate: 98.84, eqKey: 'Bosch Rotary drill GBH2-24 RE' },
+      ],
+    };
+
+    // Materials data (fixed rates from original)
+    const summaryMaterials = [
+      { name: 'TamRez 220', unit: 'kgs', unitRate: 2228.13, contracted: 0, dailyRate: 0 },
+      { name: 'Kalsomine powder', unit: 'kgs', unitRate: 256.69, contracted: 0, dailyRate: 0 },
+      { name: 'Aluminum tube 6mm', unit: 'pcs', unitRate: 5719.19, contracted: 0, dailyRate: 0 },
+    ];
+
+    // Manpower definitions for summary sheet
+    const summaryManpowerRM = [
+      { name: 'Supervisor', unit: 'man', unitRate: 37022.87, contracted: 0.33, dailyRate: 468.40, filter: 'supervisor', group: 'rm' },
+      { name: 'Admin assistant', unit: 'man', unitRate: 23855.11, contracted: 0.17, dailyRate: 152.43, filter: 'admin', group: 'rm' },
+      { name: 'Warehouse man', unit: 'man', unitRate: 24855.26, contracted: 0.25, dailyRate: 238.23, filter: 'warehouse', group: 'rm' },
+      { name: 'Driver', unit: 'man', unitRate: 28211.75, contracted: 1, dailyRate: 1081.60, filter: 'driver', group: 'rm' },
+      { name: 'Skilled labor', unit: 'man', unitRate: 21205.08, contracted: 2, dailyRate: 812.97, filter: 'skilled', group: 'rm' },
+      { name: 'Non-Skilled labor', unit: 'man', unitRate: 19955.43, contracted: 6, dailyRate: 765.06, filter: 'crew', group: 'rm' },
+    ];
+
+    const summaryManpowerEpoxy = [
+      { name: 'Driver', unit: 'man', unitRate: 28211.75, contracted: 2, dailyRate: 1081.60, filter: 'driver', group: 'epoxy' },
+      { name: 'Skilled labor', unit: 'man', unitRate: 21205.08, contracted: 4, dailyRate: 812.97, filter: 'skilled', group: 'epoxy' },
+      { name: 'Non-Skilled labor', unit: 'man', unitRate: 19955.43, contracted: 12, dailyRate: 765.06, filter: 'crew', group: 'epoxy' },
+    ];
+
+    const summaryManpowerSeg10 = [
+      { name: 'Driver', unit: 'man', unitRate: 28211.75, contracted: 1, dailyRate: 1081.60, filter: 'driver', group: 'seg10' },
+      { name: 'Skilled labor', unit: 'man', unitRate: 21205.08, contracted: 2, dailyRate: 952.92, filter: 'skilled', group: 'seg10' },
+      { name: 'Non-Skilled labor', unit: 'man', unitRate: 19955.43, contracted: 6, dailyRate: 914.57, filter: 'crew', group: 'seg10' },
+    ];
+
+    // Helper: write a summary equipment row
+    function writeSumEquipRow(sheet, rowNum, item) {
+      const r = sheet.getRow(rowNum);
+      const eq = eqByName[item.eqKey];
+      const daysUsed = eq ? parseFloat(eq.days_used || 0) : 0;
+      const attendDays = daysUsed; // equipment uses days_used for both columns
+      const amount = item.unitRate * item.contracted;
+      const actualAmount = item.unitRate * daysUsed;
+      const daysAmount = item.dailyRate * attendDays;
+
+      r.getCell(2).value = item.name;
+      r.getCell(3).value = item.unit;
+      setNum(r.getCell(4), item.unitRate);
+      setNum(r.getCell(5), item.contracted);
+      setNum(r.getCell(6), amount);
+      setNum(r.getCell(7), daysUsed);
+      setNum(r.getCell(8), attendDays);
+      setNum(r.getCell(9), item.unitRate);
+      setNum(r.getCell(10), item.dailyRate);
+      setNum(r.getCell(11), actualAmount);
+      setNum(r.getCell(12), daysAmount);
+      setBorderedRow(r, 2, 12);
+
+      return { amount, actualAmount, daysAmount };
+    }
+
+    // Helper: write a summary manpower row
+    function writeSumManpowerRow(sheet, rowNum, item) {
+      const r = sheet.getRow(rowNum);
+      const group = getManpowerGroup(item.group, item.filter);
+      const actualDeploy = sumDaysUsed(group);
+      const daysBreakdown = sumAttendanceDays(group);
+      const amount = item.unitRate * item.contracted;
+      const actualAmount = item.unitRate * actualDeploy;
+      const daysAmount = item.dailyRate * daysBreakdown;
+
+      r.getCell(2).value = item.name;
+      r.getCell(3).value = item.unit;
+      setNum(r.getCell(4), item.unitRate);
+      setNum(r.getCell(5), item.contracted);
+      setNum(r.getCell(6), amount);
+      setNum(r.getCell(7), actualDeploy);
+      setNum(r.getCell(8), daysBreakdown);
+      setNum(r.getCell(9), item.unitRate);
+      setNum(r.getCell(10), item.dailyRate);
+      setNum(r.getCell(11), actualAmount);
+      setNum(r.getCell(12), daysAmount);
+      setBorderedRow(r, 2, 12);
+
+      return { amount, actualAmount, daysAmount };
+    }
+
+    // Helper: write section header
+    function writeSumSectionHeader(sheet, rowNum, text) {
+      const r = sheet.getRow(rowNum);
+      r.getCell(2).value = text;
+      r.getCell(2).font = { bold: true, size: 10 };
+      setBorderedRow(r, 2, 12);
+    }
+
+    // Helper: write sub-header
+    function writeSumSubHeader(sheet, rowNum, text) {
+      const r = sheet.getRow(rowNum);
+      r.getCell(2).value = text;
+      r.getCell(2).font = { bold: true, italic: true, size: 9 };
+      setBorderedRow(r, 2, 12);
+    }
+
+    // Helper: write totals row
+    function writeSumTotalsRow(sheet, rowNum, label, totals) {
+      const r = sheet.getRow(rowNum);
+      r.getCell(2).value = label;
+      r.getCell(2).font = { bold: true, size: 10 };
+      setNum(r.getCell(6), totals.amount);
+      r.getCell(6).font = { bold: true };
+      setNum(r.getCell(11), totals.actualAmount);
+      r.getCell(11).font = { bold: true };
+      setNum(r.getCell(12), totals.daysAmount);
+      r.getCell(12).font = { bold: true };
+      setBorderedRow(r, 2, 12);
+    }
+
+    // Track totals
+    let totalA = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let totalEquip = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let totalManpower = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let totalMaterials = { amount: 0, actualAmount: 0, daysAmount: 0 };
+
+    function addTotals(target, source) {
+      target.amount += source.amount;
+      target.actualAmount += source.actualAmount;
+      target.daysAmount += source.daysAmount;
+    }
+
+    // Row 12: A.1 Equipment and Vehicles
+    writeSumSectionHeader(sumSheet, 12, 'A.1 Equipment and Vehicles');
+    let row = 13;
+    for (const item of summaryEquipment) {
+      const t = writeSumEquipRow(sumSheet, row, item);
+      addTotals(totalEquip, t);
+      row++;
+    }
+    // Row 20: A.2 Minor Equipment and Power Tools
+    writeSumSectionHeader(sumSheet, 20, 'A.2 Minor Equipment and Power Tools');
+
+    row = 21;
+    const minorCategories = ['Incident Response', 'Vegetation Control', 'Cleaning Tools', 'Bridge (Epoxy Injection)'];
+    for (const cat of minorCategories) {
+      writeSumSubHeader(sumSheet, row, cat);
+      row++;
+      for (const item of summaryMinorEquip[cat]) {
+        const t = writeSumEquipRow(sumSheet, row, item);
+        addTotals(totalEquip, t);
+        row++;
+      }
+    }
+
+    // Sub-total of A (equipment only so far)
+    writeSumTotalsRow(sumSheet, 37, 'Sub-total of A', totalEquip);
+
+    // Row 39: B. Manpower
+    writeSumSectionHeader(sumSheet, 39, 'B. Manpower');
+
+    // Row 41: ROUTINE MAINTENANCE
+    writeSumSubHeader(sumSheet, 41, 'ROUTINE MAINTENANCE');
+    row = 42;
+    for (const item of summaryManpowerRM) {
+      const t = writeSumManpowerRow(sumSheet, row, item);
+      addTotals(totalManpower, t);
+      row++;
+    }
+    // row is now 48
+
+    // Row 50: BRIDGE EPOXY
+    writeSumSubHeader(sumSheet, 50, 'BRIDGE EPOXY');
+    row = 51;
+    for (const item of summaryManpowerEpoxy) {
+      const t = writeSumManpowerRow(sumSheet, row, item);
+      addTotals(totalManpower, t);
+      row++;
+    }
+
+    // Row 55: SEGMENT 10 / CONNECTOR
+    writeSumSubHeader(sumSheet, 55, 'SEGMENT 10 / CONNECTOR');
+    row = 56;
+    for (const item of summaryManpowerSeg10) {
+      const t = writeSumManpowerRow(sumSheet, row, item);
+      addTotals(totalManpower, t);
+      row++;
+    }
+
+    // Row 60: Sub-total of B
+    writeSumTotalsRow(sumSheet, 60, 'Sub-total of B', totalManpower);
+
+    // Row 61: C. Materials
+    writeSumSectionHeader(sumSheet, 61, 'C. Materials');
+
+    // Materials rows 63-65
+    row = 63;
+    for (const mat of summaryMaterials) {
+      const r = sumSheet.getRow(row);
+      // Look up material billing record by matching reference_id
+      const matRec = materialRecords.find(mr => {
+        // reference_id corresponds to the index/position or we match by row
+        return mr.reference_id === (row - 62); // 1, 2, 3
+      });
+      const daysUsed = matRec ? parseFloat(matRec.days_used || 0) : 0;
+      const matAmount = mat.unitRate * daysUsed;
+
+      r.getCell(2).value = mat.name;
+      r.getCell(3).value = mat.unit;
+      setNum(r.getCell(4), mat.unitRate);
+      setNum(r.getCell(5), 0);
+      setNum(r.getCell(6), 0);
+      setNum(r.getCell(7), daysUsed);
+      setNum(r.getCell(8), daysUsed);
+      setNum(r.getCell(9), mat.unitRate);
+      setNum(r.getCell(10), 0);
+      setNum(r.getCell(11), matAmount);
+      setNum(r.getCell(12), matAmount);
+      setBorderedRow(r, 2, 12);
+
+      totalMaterials.amount += 0;
+      totalMaterials.actualAmount += matAmount;
+      totalMaterials.daysAmount += matAmount;
+      row++;
+    }
+
+    // Row 67: Sub-total of C
+    writeSumTotalsRow(sumSheet, 67, 'Sub-total of C', totalMaterials);
+
+    // Update Sub-total of A to include equipment totals only (already done at row 37)
+    // The overall totals combine all
+    totalA.amount = totalEquip.amount + totalManpower.amount + totalMaterials.amount;
+    totalA.actualAmount = totalEquip.actualAmount + totalManpower.actualAmount + totalMaterials.actualAmount;
+    totalA.daysAmount = totalEquip.daysAmount + totalManpower.daysAmount + totalMaterials.daysAmount;
+
+    // ═══════════════════════════════════════════════════════════════
+    // ── SHEET: CA SUMMARY — matches "CA SUMMARY (2)" from original ──
+    // ═══════════════════════════════════════════════════════════════
+    const caSheet = workbook.addWorksheet('CA SUMMARY');
+
+    // Column widths: A=4, B=30, C=12, D=12, E=14, F=14, G=14, H=18, I=18, J=18
+    caSheet.getColumn(1).width = 4;
+    caSheet.getColumn(2).width = 34;  // Resources
+    caSheet.getColumn(3).width = 14;  // QTY Required
+    caSheet.getColumn(4).width = 14;  // QTY Actual
+    caSheet.getColumn(5).width = 16;  // Days Absent/Breakdown
+    caSheet.getColumn(6).width = 16;  // Monthly Rate
+    caSheet.getColumn(7).width = 14;  // Daily Rate
+    caSheet.getColumn(8).width = 18;  // Total Amount Actual
+    caSheet.getColumn(9).width = 18;  // Total Amount Absent
+    caSheet.getColumn(10).width = 20; // Total Amount to be Billed
+
+    // CA SUMMARY helpers
+    function writeCASectionTitle(sheet, rowNum, text) {
+      sheet.mergeCells(rowNum, 2, rowNum, 10);
+      const cell = sheet.getCell(rowNum, 2);
+      cell.value = text;
+      cell.font = { size: 12, bold: true, ...whiteFont };
+      applyHeaderFill(cell, darkBlue);
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet.getRow(rowNum).height = 28;
+    }
+
+    function writeCAHeaders(sheet, rowNum) {
+      const headers = ['Resources', 'QTY Required', 'QTY Actual', 'Days Absent/\nBreakdown', 'Monthly Rate', 'Daily Rate', 'Total Amount\nActual', 'Total Amount\nAbsent', 'Total Amount\nto be Billed'];
+      const r = sheet.getRow(rowNum);
+      headers.forEach((h, i) => {
+        const cell = r.getCell(i + 2);
+        cell.value = h;
+        cell.font = { bold: true, size: 9, ...whiteFont };
+        applyHeaderFill(cell, blue);
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = allBorder;
+      });
+      r.height = 30;
+    }
+
+    function writeCASubHeader(sheet, rowNum, text) {
+      const r = sheet.getRow(rowNum);
+      r.getCell(2).value = text;
+      r.getCell(2).font = { bold: true, size: 10 };
+      setBorderedRow(r, 2, 10);
+    }
+
+    function writeCATotalRow(sheet, rowNum, label, totals) {
+      const r = sheet.getRow(rowNum);
+      r.getCell(2).value = label;
+      r.getCell(2).font = { bold: true };
+      setNum(r.getCell(8), totals.actual);
+      r.getCell(8).font = { bold: true };
+      setNum(r.getCell(9), totals.absent);
+      r.getCell(9).font = { bold: true };
+      setNum(r.getCell(10), totals.billed);
+      r.getCell(10).font = { bold: true };
+      setBorderedRow(r, 2, 10);
+    }
+
+    // Equipment row writer for CA Summary
+    function writeCAEquipRow(sheet, rowNum, name, qtyReq, monthlyRate, dailyRate, eqKey) {
+      const r = sheet.getRow(rowNum);
+      const eq = eqByName[eqKey];
+      const qtyActual = eq ? parseFloat(eq.days_used || 0) : qtyReq;
+      const daysAbsent = qtyReq - qtyActual;
+      const totalActual = monthlyRate * qtyActual;
+      const totalAbsent = dailyRate * (daysAbsent > 0 ? daysAbsent : 0);
+      const toBeBilled = totalActual - totalAbsent;
+
+      r.getCell(2).value = name;
+      setNum(r.getCell(3), qtyReq);
+      setNum(r.getCell(4), qtyActual);
+      setNum(r.getCell(5), daysAbsent > 0 ? daysAbsent : 0);
+      setNum(r.getCell(6), monthlyRate);
+      setNum(r.getCell(7), dailyRate);
+      setNum(r.getCell(8), totalActual);
+      setNum(r.getCell(9), totalAbsent);
+      setNum(r.getCell(10), toBeBilled);
+      setBorderedRow(r, 2, 10);
+
+      return { actual: totalActual, absent: totalAbsent, billed: toBeBilled };
+    }
+
+    // Manpower row writer for CA Summary
+    function writeCAManpowerRow(sheet, rowNum, name, qtyReq, monthlyRate, dailyRate, groupKey, posFilter) {
+      const r = sheet.getRow(rowNum);
+      const group = getManpowerGroup(groupKey, posFilter);
+      const qtyActual = sumDaysUsed(group) || qtyReq;
+      const daysAbsent = sumAttendanceDays(group);
+      const totalActual = monthlyRate * qtyActual;
+      const totalAbsent = dailyRate * daysAbsent;
+      const toBeBilled = totalActual - totalAbsent;
+
+      r.getCell(2).value = name;
+      setNum(r.getCell(3), qtyReq);
+      setNum(r.getCell(4), qtyActual);
+      setNum(r.getCell(5), daysAbsent);
+      setNum(r.getCell(6), monthlyRate);
+      setNum(r.getCell(7), dailyRate);
+      setNum(r.getCell(8), totalActual);
+      setNum(r.getCell(9), totalAbsent);
+      setNum(r.getCell(10), toBeBilled);
+      setBorderedRow(r, 2, 10);
+
+      return { actual: totalActual, absent: totalAbsent, billed: toBeBilled };
+    }
+
+    // Materials row writer for CA Summary
+    function writeCAMaterialRow(sheet, rowNum, name, unitRate, refId) {
+      const r = sheet.getRow(rowNum);
+      const matRec = materialRecords.find(mr => mr.reference_id === refId);
+      const qty = matRec ? parseFloat(matRec.days_used || 0) : 0;
+      const totalActual = unitRate * qty;
+
+      r.getCell(2).value = name;
+      setNum(r.getCell(3), 0);
+      setNum(r.getCell(4), qty);
+      setNum(r.getCell(5), 0);
+      setNum(r.getCell(6), unitRate);
+      setNum(r.getCell(7), 0);
+      setNum(r.getCell(8), totalActual);
+      setNum(r.getCell(9), 0);
+      setNum(r.getCell(10), totalActual);
+      setBorderedRow(r, 2, 10);
+
+      return { actual: totalActual, absent: 0, billed: totalActual };
+    }
+
+    // Grand total computation helper for CA Summary
+    function writeCAGrandTotal(sheet, startRow, eqTotal, mpTotal, matTotal) {
+      let r = startRow;
+      const directA = eqTotal.billed + mpTotal.billed + matTotal.billed;
+      const gaB = directA * 0.15;
+      const profitC = (directA + gaB) * 0.10;
+      const vatD = (directA + gaB + profitC) * 0.12;
+      const grand = directA + gaB + profitC + vatD;
+
+      const computeRows = [
+        { label: 'A. DIRECT RESOURCES', value: directA },
+        { label: 'B. GENERAL & ADMINISTRATIVE OVERHEAD (15%)', value: gaB },
+        { label: 'C. PROFIT (10%)', value: profitC },
+        { label: 'D. VAT 12%', value: vatD },
+        { label: 'GRAND TOTAL', value: grand },
+      ];
+
+      computeRows.forEach((cr, idx) => {
+        const row = sheet.getRow(r);
+        row.getCell(2).value = cr.label;
+        row.getCell(2).font = { bold: true, size: idx === 4 ? 11 : 10 };
+        setNum(row.getCell(10), cr.value);
+        row.getCell(10).font = { bold: true, size: idx === 4 ? 11 : 10 };
+        if (idx === 4) {
+          applyHeaderFill(row.getCell(2), 'FFFFF9C4');
+          applyHeaderFill(row.getCell(10), 'FFFFF9C4');
+        }
+        setBorderedRow(row, 2, 10);
+        r++;
+      });
+
+      return r;
+    }
+
+    // ═══════════════════════════════════════════
+    // Section 1: BRIDGE EPOXY (Row 7)
+    // ═══════════════════════════════════════════
+    writeCASectionTitle(caSheet, 7, 'MONTHLY BILLING - (BRIDGE EPOXY)');
+    writeCAHeaders(caSheet, 8);
+
+    writeCASubHeader(caSheet, 9, 'Equipment');
+    let epoxyEqTotal = { actual: 0, absent: 0, billed: 0 };
+    let caRow = 10;
+
+    const epoxyEquipItems = [
+      { name: 'Service Vehicle', qtyReq: 2, monthlyRate: 120252.98, dailyRate: 4610.34, eqKey: 'Service Vehicle (EPOXY)' },
+      { name: 'Genset', qtyReq: 2, monthlyRate: 13268.85, dailyRate: 508.71, eqKey: 'Genset Optimax 5kva' },
+      { name: 'Wagner', qtyReq: 2, monthlyRate: 8980.16, dailyRate: 344.29, eqKey: 'Wagner Epoxy injection pump' },
+      { name: 'Grinder', qtyReq: 3, monthlyRate: 540.18, dailyRate: 20.71, eqKey: 'Bosch Grinder GWS060' },
+      { name: 'Blower', qtyReq: 2, monthlyRate: 646.58, dailyRate: 24.79, eqKey: 'Bosch Blower' },
+      { name: 'Rotary drill', qtyReq: 3, monthlyRate: 2578.13, dailyRate: 98.84, eqKey: 'Bosch Rotary drill GBH2-24 RE' },
+    ];
+    for (const item of epoxyEquipItems) {
+      const t = writeCAEquipRow(caSheet, caRow, item.name, item.qtyReq, item.monthlyRate, item.dailyRate, item.eqKey);
+      epoxyEqTotal.actual += t.actual; epoxyEqTotal.absent += t.absent; epoxyEqTotal.billed += t.billed;
+      caRow++;
+    }
+    writeCATotalRow(caSheet, caRow, 'Total Amount', epoxyEqTotal);
+    caRow++;
+
+    writeCASubHeader(caSheet, caRow, 'Manpower');
+    caRow++;
+    let epoxyMpTotal = { actual: 0, absent: 0, billed: 0 };
+    const epoxyManpowerItems = [
+      { name: 'Skilled Labor', qtyReq: 4, monthlyRate: 21205.08, dailyRate: 812.97, group: 'epoxy', filter: 'skilled' },
+      { name: 'Non-Skilled AM Shift', qtyReq: 12, monthlyRate: 19955.43, dailyRate: 765.06, group: 'epoxy', filter: 'crew' },
+      { name: 'Driver AM Shift', qtyReq: 2, monthlyRate: 28211.75, dailyRate: 1081.60, group: 'epoxy', filter: 'driver' },
+    ];
+    for (const item of epoxyManpowerItems) {
+      const t = writeCAManpowerRow(caSheet, caRow, item.name, item.qtyReq, item.monthlyRate, item.dailyRate, item.group, item.filter);
+      epoxyMpTotal.actual += t.actual; epoxyMpTotal.absent += t.absent; epoxyMpTotal.billed += t.billed;
+      caRow++;
+    }
+    writeCATotalRow(caSheet, caRow, 'Total Amount', epoxyMpTotal);
+    caRow++;
+
+    writeCASubHeader(caSheet, caRow, 'Materials');
+    caRow++;
+    let epoxyMatTotal = { actual: 0, absent: 0, billed: 0 };
+    const epoxyMaterialItems = [
+      { name: 'TamRez 220', unitRate: 2228.13, refId: 1 },
+      { name: 'Kalmosine Powder', unitRate: 256.69, refId: 2 },
+      { name: 'Aluminum Tube', unitRate: 5719.19, refId: 3 },
+    ];
+    for (const item of epoxyMaterialItems) {
+      const t = writeCAMaterialRow(caSheet, caRow, item.name, item.unitRate, item.refId);
+      epoxyMatTotal.actual += t.actual; epoxyMatTotal.absent += t.absent; epoxyMatTotal.billed += t.billed;
+      caRow++;
+    }
+    writeCATotalRow(caSheet, caRow, 'Total Amount', epoxyMatTotal);
+    caRow += 2;
+
+    // Grand total computation for BRIDGE EPOXY
+    caRow = writeCAGrandTotal(caSheet, caRow, epoxyEqTotal, epoxyMpTotal, epoxyMatTotal);
+    caRow += 2;
+
+    // ═══════════════════════════════════════════
+    // Section 2: ROUTINE MAINTENANCE (Row ~40)
+    // ═══════════════════════════════════════════
+    const rmStartRow = 40;
+    caRow = rmStartRow;
+    writeCASectionTitle(caSheet, caRow, 'MONTHLY BILLING - (ROUTINE MAINTENANCE)');
+    caRow++;
+    writeCAHeaders(caSheet, caRow);
+    caRow++;
+
+    writeCASubHeader(caSheet, caRow, 'Equipment');
+    caRow++;
+    let rmEqTotal = { actual: 0, absent: 0, billed: 0 };
+    const rmEquipItems = [
+      { name: 'Service Vehicle', qtyReq: 1, monthlyRate: 120252.98, dailyRate: 4610.34, eqKey: 'Service Vehicle (RM)' },
+      { name: 'Grass Cutter', qtyReq: 1, monthlyRate: 24585, dailyRate: 942.56, eqKey: 'Grass Cutter (RM)' },
+      { name: 'Pressure washer', qtyReq: 1, monthlyRate: 6063.99, dailyRate: 232.49, eqKey: 'Pressure washer (RM)' },
+    ];
+    for (const item of rmEquipItems) {
+      const t = writeCAEquipRow(caSheet, caRow, item.name, item.qtyReq, item.monthlyRate, item.dailyRate, item.eqKey);
+      rmEqTotal.actual += t.actual; rmEqTotal.absent += t.absent; rmEqTotal.billed += t.billed;
+      caRow++;
+    }
+    writeCATotalRow(caSheet, caRow, 'Total Amount', rmEqTotal);
+    caRow++;
+
+    writeCASubHeader(caSheet, caRow, 'Manpower');
+    caRow++;
+    let rmMpTotal = { actual: 0, absent: 0, billed: 0 };
+    const rmManpowerItems = [
+      { name: 'Supervisor', qtyReq: 0.33, monthlyRate: 37022.87, dailyRate: 468.40, group: 'rm', filter: 'supervisor' },
+      { name: 'Admin assistant', qtyReq: 0.17, monthlyRate: 23855.11, dailyRate: 152.43, group: 'rm', filter: 'admin' },
+      { name: 'Warehouse man', qtyReq: 0.25, monthlyRate: 24855.26, dailyRate: 238.23, group: 'rm', filter: 'warehouse' },
+      { name: 'Driver', qtyReq: 1, monthlyRate: 28211.75, dailyRate: 1081.60, group: 'rm', filter: 'driver' },
+      { name: 'Skilled Labor', qtyReq: 2, monthlyRate: 21205.08, dailyRate: 812.97, group: 'rm', filter: 'skilled' },
+      { name: 'Non-Skilled', qtyReq: 6, monthlyRate: 19955.43, dailyRate: 765.06, group: 'rm', filter: 'crew' },
+    ];
+    for (const item of rmManpowerItems) {
+      const t = writeCAManpowerRow(caSheet, caRow, item.name, item.qtyReq, item.monthlyRate, item.dailyRate, item.group, item.filter);
+      rmMpTotal.actual += t.actual; rmMpTotal.absent += t.absent; rmMpTotal.billed += t.billed;
+      caRow++;
+    }
+    writeCATotalRow(caSheet, caRow, 'Total Amount', rmMpTotal);
+    caRow += 2;
+
+    // Grand total for ROUTINE MAINTENANCE
+    caRow = writeCAGrandTotal(caSheet, caRow, rmEqTotal, rmMpTotal, { actual: 0, absent: 0, billed: 0 });
+    caRow += 2;
+
+    // ═══════════════════════════════════════════
+    // Section 3: SEGMENT 10/CONNECTOR (Row ~64)
+    // ═══════════════════════════════════════════
+    const seg10StartRow = 64;
+    caRow = seg10StartRow;
+    writeCASectionTitle(caSheet, caRow, 'MONTHLY BILLING - (SEGMENT 10/CONNECTOR)');
+    caRow++;
+    writeCAHeaders(caSheet, caRow);
+    caRow++;
+
+    writeCASubHeader(caSheet, caRow, 'Equipment');
+    caRow++;
+    let seg10EqTotal = { actual: 0, absent: 0, billed: 0 };
+    const seg10EquipItems = [
+      { name: 'Service Vehicle', qtyReq: 1, monthlyRate: 131224.24, dailyRate: 5030.96, eqKey: 'Service Vehicle (SEGMENT 10)' },
+      { name: 'Grass Cutter', qtyReq: 1, monthlyRate: 24585, dailyRate: 942.56, eqKey: 'Grass Cutter (SEG10)' },
+      { name: 'Pressure washer', qtyReq: 1, monthlyRate: 6063.99, dailyRate: 232.49, eqKey: 'Pressure washer (SEG10)' },
+    ];
+    for (const item of seg10EquipItems) {
+      const t = writeCAEquipRow(caSheet, caRow, item.name, item.qtyReq, item.monthlyRate, item.dailyRate, item.eqKey);
+      seg10EqTotal.actual += t.actual; seg10EqTotal.absent += t.absent; seg10EqTotal.billed += t.billed;
+      caRow++;
+    }
+    writeCATotalRow(caSheet, caRow, 'Total Amount', seg10EqTotal);
+    caRow++;
+
+    writeCASubHeader(caSheet, caRow, 'Manpower');
+    caRow++;
+    let seg10MpTotal = { actual: 0, absent: 0, billed: 0 };
+    const seg10ManpowerItems = [
+      { name: 'Driver', qtyReq: 1, monthlyRate: 28211.75, dailyRate: 1081.60, group: 'seg10', filter: 'driver' },
+      { name: 'Skilled', qtyReq: 2, monthlyRate: 21205.08, dailyRate: 952.92, group: 'seg10', filter: 'skilled' },
+      { name: 'Non-Skilled', qtyReq: 6, monthlyRate: 19955.43, dailyRate: 914.57, group: 'seg10', filter: 'crew' },
+    ];
+    for (const item of seg10ManpowerItems) {
+      const t = writeCAManpowerRow(caSheet, caRow, item.name, item.qtyReq, item.monthlyRate, item.dailyRate, item.group, item.filter);
+      seg10MpTotal.actual += t.actual; seg10MpTotal.absent += t.absent; seg10MpTotal.billed += t.billed;
+      caRow++;
+    }
+    writeCATotalRow(caSheet, caRow, 'Total Amount', seg10MpTotal);
+    caRow += 2;
+
+    // Grand total for SEGMENT 10/CONNECTOR
+    writeCAGrandTotal(caSheet, caRow, seg10EqTotal, seg10MpTotal, { actual: 0, absent: 0, billed: 0 });
+
+    // ── Write response ──
+    const filename = `billing_${monthName}_${year}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
