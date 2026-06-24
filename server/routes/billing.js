@@ -527,22 +527,13 @@ router.get('/export', authenticateBilling, async (req, res) => {
     // equipmentKey maps to equipmentItems by equipment_name
 
     const summaryEquipment = [
-      // A.1 Equipment and Vehicles (Row 12 header, rows 13-19 data)
-      { name: 'Fassi Truck', unit: 'nos.', unitRate: 209762.09, contracted: 0.25, dailyRate: 1724.07, eqKey: 'Fassi Truck' },
-      { name: 'Fassi with man basket', unit: 'nos.', unitRate: 209762.09, contracted: 0.4, dailyRate: 2758.52, eqKey: 'Fassi with man basket' },
-      { name: 'Water truck', unit: 'nos.', unitRate: 162848.50, contracted: 0.25, dailyRate: 1338.48, eqKey: 'Water truck' },
-      { name: 'Skid Loader', unit: 'nos.', unitRate: 88573.91, contracted: 0.5, dailyRate: 1456.01, eqKey: 'Skid Loader' },
+      // A.1 Equipment and Vehicles (Service Vehicles only)
       { name: 'Service Vehicle RM', unit: 'nos.', unitRate: 120252.98, contracted: 1, dailyRate: 4610.34, eqKey: 'Service Vehicle (RM)' },
       { name: 'Service Vehicle EPOXY', unit: 'nos.', unitRate: 120252.98, contracted: 2, dailyRate: 4610.34, eqKey: 'Service Vehicle (EPOXY)' },
       { name: 'Service Vehicle SEG10', unit: 'nos.', unitRate: 131224.24, contracted: 1, dailyRate: 5030.96, eqKey: 'Service Vehicle (SEGMENT 10)' },
     ];
 
     const summaryMinorEquip = {
-      'Incident Response': [
-        { name: 'Flashing Arrow', unit: 'nos.', unitRate: 14630.21, contracted: 2.5, dailyRate: 480.99, eqKey: 'Flashing Arrow' },
-        { name: 'Tower Light', unit: 'nos.', unitRate: 35066.96, contracted: 0.67, dailyRate: 768.59, eqKey: 'Tower Light' },
-        { name: 'Advance warning sign', unit: 'sets', unitRate: 12378.73, contracted: 1.67, dailyRate: 406.97, eqKey: 'Advance warning sign' },
-      ],
       'Vegetation Control': [
         { name: 'Grass Cutter RM', unit: 'nos.', unitRate: 24585, contracted: 1, dailyRate: 942.56, eqKey: 'Grass Cutter (RM)' },
         { name: 'Grass Cutter SEG10', unit: 'nos.', unitRate: 24585, contracted: 1, dailyRate: 942.56, eqKey: 'Grass Cutter (SEG10)' },
@@ -552,11 +543,11 @@ router.get('/export', authenticateBilling, async (req, res) => {
         { name: 'Pressure washer SEG10', unit: 'nos.', unitRate: 6063.99, contracted: 1, dailyRate: 232.49, eqKey: 'Pressure washer (SEG10)' },
       ],
       'Bridge (Epoxy Injection)': [
-        { name: 'Genset', unit: 'nos.', unitRate: 13268.85, contracted: 2, dailyRate: 508.71, eqKey: 'Genset Optimax 5kva' },
-        { name: 'Wagner pump', unit: 'nos.', unitRate: 8980.16, contracted: 2, dailyRate: 344.29, eqKey: 'Wagner Epoxy injection pump' },
-        { name: 'Grinder', unit: 'nos.', unitRate: 540.18, contracted: 3, dailyRate: 20.71, eqKey: 'Bosch Grinder GWS060' },
-        { name: 'Blower', unit: 'nos.', unitRate: 646.58, contracted: 2, dailyRate: 24.79, eqKey: 'Bosch Blower' },
-        { name: 'Rotary drill', unit: 'nos.', unitRate: 2578.13, contracted: 3, dailyRate: 98.84, eqKey: 'Bosch Rotary drill GBH2-24 RE' },
+        { name: 'Genset Optimax 5kva', unit: 'nos.', unitRate: 13268.85, contracted: 2, dailyRate: 508.71, eqKey: 'Genset Optimax 5kva' },
+        { name: 'Wagner Epoxy injection pump', unit: 'nos.', unitRate: 8980.16, contracted: 2, dailyRate: 344.29, eqKey: 'Wagner Epoxy injection pump' },
+        { name: 'Bosch Grinder GWS060', unit: 'nos.', unitRate: 540.18, contracted: 3, dailyRate: 20.71, eqKey: 'Bosch Grinder GWS060' },
+        { name: 'Bosch Blower', unit: 'nos.', unitRate: 646.58, contracted: 2, dailyRate: 24.79, eqKey: 'Bosch Blower' },
+        { name: 'Bosch Rotary drill GBH2-24 RE', unit: 'nos.', unitRate: 2578.13, contracted: 3, dailyRate: 98.84, eqKey: 'Bosch Rotary drill GBH2-24 RE' },
       ],
     };
 
@@ -672,7 +663,6 @@ router.get('/export', authenticateBilling, async (req, res) => {
     }
 
     // Track totals
-    let totalA = { amount: 0, actualAmount: 0, daysAmount: 0 };
     let totalEquip = { amount: 0, actualAmount: 0, daysAmount: 0 };
     let totalManpower = { amount: 0, actualAmount: 0, daysAmount: 0 };
     let totalMaterials = { amount: 0, actualAmount: 0, daysAmount: 0 };
@@ -683,19 +673,26 @@ router.get('/export', authenticateBilling, async (req, res) => {
       target.daysAmount += source.daysAmount;
     }
 
-    // Row 12: A.1 Equipment and Vehicles
-    writeSumSectionHeader(sumSheet, 12, 'A.1 Equipment and Vehicles');
-    let row = 13;
+    // Use dynamic row counter starting at row 12
+    let row = 12;
+
+    // A.1 Equipment and Vehicles
+    writeSumSectionHeader(sumSheet, row, 'A.1 Equipment and Vehicles');
+    row++;
     for (const item of summaryEquipment) {
       const t = writeSumEquipRow(sumSheet, row, item);
       addTotals(totalEquip, t);
       row++;
     }
-    // Row 20: A.2 Minor Equipment and Power Tools
-    writeSumSectionHeader(sumSheet, 20, 'A.2 Minor Equipment and Power Tools');
 
-    row = 21;
-    const minorCategories = ['Incident Response', 'Vegetation Control', 'Cleaning Tools', 'Bridge (Epoxy Injection)'];
+    // blank spacer row
+    row++;
+
+    // A.2 Minor Equipment and Power Tools
+    writeSumSectionHeader(sumSheet, row, 'A.2 Minor Equipment and Power Tools');
+    row++;
+
+    const minorCategories = ['Vegetation Control', 'Cleaning Tools', 'Bridge (Epoxy Injection)'];
     for (const cat of minorCategories) {
       writeSumSubHeader(sumSheet, row, cat);
       row++;
@@ -706,54 +703,78 @@ router.get('/export', authenticateBilling, async (req, res) => {
       }
     }
 
-    // Sub-total of A (equipment only so far)
-    writeSumTotalsRow(sumSheet, 37, 'Sub-total of A', totalEquip);
+    // blank spacer row
+    row++;
 
-    // Row 39: B. Manpower
-    writeSumSectionHeader(sumSheet, 39, 'B. Manpower');
+    // Sub-total of A (equipment)
+    writeSumTotalsRow(sumSheet, row, 'Sub-total of A', totalEquip);
+    row++;
 
-    // Row 41: ROUTINE MAINTENANCE
-    writeSumSubHeader(sumSheet, 41, 'ROUTINE MAINTENANCE');
-    row = 42;
+    // blank spacer row
+    row++;
+
+    // B. Manpower
+    writeSumSectionHeader(sumSheet, row, 'B. Manpower');
+    row++;
+
+    // blank spacer row
+    row++;
+
+    // ROUTINE MAINTENANCE
+    writeSumSubHeader(sumSheet, row, 'ROUTINE MAINTENANCE');
+    row++;
     for (const item of summaryManpowerRM) {
       const t = writeSumManpowerRow(sumSheet, row, item);
       addTotals(totalManpower, t);
       row++;
     }
-    // row is now 48
 
-    // Row 50: BRIDGE EPOXY
-    writeSumSubHeader(sumSheet, 50, 'BRIDGE EPOXY');
-    row = 51;
+    // blank spacer row
+    row++;
+
+    // BRIDGE EPOXY
+    writeSumSubHeader(sumSheet, row, 'BRIDGE EPOXY');
+    row++;
     for (const item of summaryManpowerEpoxy) {
       const t = writeSumManpowerRow(sumSheet, row, item);
       addTotals(totalManpower, t);
       row++;
     }
 
-    // Row 55: SEGMENT 10 / CONNECTOR
-    writeSumSubHeader(sumSheet, 55, 'SEGMENT 10 / CONNECTOR');
-    row = 56;
+    // blank spacer row
+    row++;
+
+    // SEGMENT 10 / CONNECTOR
+    writeSumSubHeader(sumSheet, row, 'SEGMENT 10 / CONNECTOR');
+    row++;
     for (const item of summaryManpowerSeg10) {
       const t = writeSumManpowerRow(sumSheet, row, item);
       addTotals(totalManpower, t);
       row++;
     }
 
-    // Row 60: Sub-total of B
-    writeSumTotalsRow(sumSheet, 60, 'Sub-total of B', totalManpower);
+    // blank spacer row
+    row++;
 
-    // Row 61: C. Materials
-    writeSumSectionHeader(sumSheet, 61, 'C. Materials');
+    // Sub-total of B
+    writeSumTotalsRow(sumSheet, row, 'Sub-total of B', totalManpower);
+    row++;
 
-    // Materials rows 63-65
-    row = 63;
+    // C. Materials
+    writeSumSectionHeader(sumSheet, row, 'C. Materials');
+    row++;
+
+    // blank spacer row
+    row++;
+
+    // Materials rows
+    let matIndex = 1;
     for (const mat of summaryMaterials) {
       const r = sumSheet.getRow(row);
       // Look up material billing record by matching reference_id
+      const matRefId = matIndex;
       const matRec = materialRecords.find(mr => {
-        // reference_id corresponds to the index/position or we match by row
-        return mr.reference_id === (row - 62); // 1, 2, 3
+        return mr.reference_id === matRefId;
       });
       const daysUsed = matRec ? parseFloat(matRec.days_used || 0) : 0;
       const matAmount = mat.unitRate * daysUsed;
@@ -775,16 +796,82 @@ router.get('/export', authenticateBilling, async (req, res) => {
       totalMaterials.actualAmount += matAmount;
       totalMaterials.daysAmount += matAmount;
       row++;
+      matIndex++;
     }
 
-    // Row 67: Sub-total of C
-    writeSumTotalsRow(sumSheet, 67, 'Sub-total of C', totalMaterials);
+    // blank spacer row
+    row++;
 
-    // Update Sub-total of A to include equipment totals only (already done at row 37)
-    // The overall totals combine all
-    totalA.amount = totalEquip.amount + totalManpower.amount + totalMaterials.amount;
-    totalA.actualAmount = totalEquip.actualAmount + totalManpower.actualAmount + totalMaterials.actualAmount;
-    totalA.daysAmount = totalEquip.daysAmount + totalManpower.daysAmount + totalMaterials.daysAmount;
+    // Sub-total of C
+    writeSumTotalsRow(sumSheet, row, 'Sub-total of C', totalMaterials);
+    row++;
+
+    // ── FULL BILLING COMPUTATION at bottom of SUMMARY sheet ──
+    // blank spacer rows
+    row += 2;
+
+    // A. DIRECT RESOURCES = Sub-total A + Sub-total B + Sub-total C
+    const directResources = {
+      amount: totalEquip.amount + totalManpower.amount + totalMaterials.amount,
+      actualAmount: totalEquip.actualAmount + totalManpower.actualAmount + totalMaterials.actualAmount,
+      daysAmount: totalEquip.daysAmount + totalManpower.daysAmount + totalMaterials.daysAmount,
+    };
+
+    // B. G&A OVERHEAD (15% of A)
+    const gaOverhead = {
+      amount: directResources.amount * 0.15,
+      actualAmount: directResources.actualAmount * 0.15,
+      daysAmount: directResources.daysAmount * 0.15,
+    };
+
+    // C. PROFIT (10% of A+B)
+    const profit = {
+      amount: (directResources.amount + gaOverhead.amount) * 0.10,
+      actualAmount: (directResources.actualAmount + gaOverhead.actualAmount) * 0.10,
+      daysAmount: (directResources.daysAmount + gaOverhead.daysAmount) * 0.10,
+    };
+
+    // D. VAT 12% of (A+B+C)
+    const vat = {
+      amount: (directResources.amount + gaOverhead.amount + profit.amount) * 0.12,
+      actualAmount: (directResources.actualAmount + gaOverhead.actualAmount + profit.actualAmount) * 0.12,
+      daysAmount: (directResources.daysAmount + gaOverhead.daysAmount + profit.daysAmount) * 0.12,
+    };
+
+    // GRAND TOTAL = A+B+C+D
+    const grandTotal = {
+      amount: directResources.amount + gaOverhead.amount + profit.amount + vat.amount,
+      actualAmount: directResources.actualAmount + gaOverhead.actualAmount + profit.actualAmount + vat.actualAmount,
+      daysAmount: directResources.daysAmount + gaOverhead.daysAmount + profit.daysAmount + vat.daysAmount,
+    };
+
+    const billingComputation = [
+      { label: 'A. DIRECT RESOURCES', totals: directResources },
+      { label: 'B. GENERAL & ADMINISTRATIVE OVERHEAD, CONTINGENCY & MISCELLANEOUS (15%)', totals: gaOverhead },
+      { label: 'C. PROFIT (10%)', totals: profit },
+      { label: 'D. VAT 12%', totals: vat },
+      { label: 'GRAND TOTAL', totals: grandTotal },
+    ];
+
+    billingComputation.forEach((item, idx) => {
+      const r = sumSheet.getRow(row);
+      r.getCell(2).value = item.label;
+      r.getCell(2).font = { bold: true, size: idx === 4 ? 12 : 10 };
+      setNum(r.getCell(6), item.totals.amount);
+      r.getCell(6).font = { bold: true, size: idx === 4 ? 11 : 10 };
+      setNum(r.getCell(11), item.totals.actualAmount);
+      r.getCell(11).font = { bold: true, size: idx === 4 ? 11 : 10 };
+      setNum(r.getCell(12), item.totals.daysAmount);
+      r.getCell(12).font = { bold: true, size: idx === 4 ? 11 : 10 };
+      if (idx === 4) {
+        // Highlight GRAND TOTAL row
+        for (let c = 2; c <= 12; c++) {
+          applyHeaderFill(r.getCell(c), 'FFFFF9C4');
+        }
+      }
+      setBorderedRow(r, 2, 12);
+      row++;
+    });
 
     // ═══════════════════════════════════════════════════════════════
     // ── SHEET: CA SUMMARY — matches "CA SUMMARY (2)" from original ──
@@ -1014,10 +1101,8 @@ router.get('/export', authenticateBilling, async (req, res) => {
     caRow += 2;
 
     // ═══════════════════════════════════════════
-    // Section 2: ROUTINE MAINTENANCE (Row ~40)
+    // Section 2: ROUTINE MAINTENANCE
     // ═══════════════════════════════════════════
-    const rmStartRow = 40;
-    caRow = rmStartRow;
     writeCASectionTitle(caSheet, caRow, 'MONTHLY BILLING - (ROUTINE MAINTENANCE)');
     caRow++;
     writeCAHeaders(caSheet, caRow);
@@ -1063,10 +1148,8 @@ router.get('/export', authenticateBilling, async (req, res) => {
     caRow += 2;
 
     // ═══════════════════════════════════════════
-    // Section 3: SEGMENT 10/CONNECTOR (Row ~64)
+    // Section 3: SEGMENT 10/CONNECTOR
     // ═══════════════════════════════════════════
-    const seg10StartRow = 64;
-    caRow = seg10StartRow;
     writeCASectionTitle(caSheet, caRow, 'MONTHLY BILLING - (SEGMENT 10/CONNECTOR)');
     caRow++;
     writeCAHeaders(caSheet, caRow);
