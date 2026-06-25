@@ -667,6 +667,14 @@ router.get('/export', authenticateBilling, async (req, res) => {
     let totalManpower = { amount: 0, actualAmount: 0, daysAmount: 0 };
     let totalMaterials = { amount: 0, actualAmount: 0, daysAmount: 0 };
 
+    // Per-section totals for INDIRECT COST computation
+    let rmEquipTotal = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let rmManpowerTotal = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let epoxyEquipTotal = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let epoxyManpowerTotal = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let seg10EquipTotal = { amount: 0, actualAmount: 0, daysAmount: 0 };
+    let seg10ManpowerTotal = { amount: 0, actualAmount: 0, daysAmount: 0 };
+
     function addTotals(target, source) {
       target.amount += source.amount;
       target.actualAmount += source.actualAmount;
@@ -676,12 +684,24 @@ router.get('/export', authenticateBilling, async (req, res) => {
     // Use dynamic row counter starting at row 12
     let row = 12;
 
+    // Helper: classify equipment item to section based on eqKey
+    function classifyEquipSection(eqKey) {
+      const key = (eqKey || '').toUpperCase();
+      if (key.includes('EPOXY') || key.includes('GENSET') || key.includes('WAGNER') || key.includes('GRINDER') || key.includes('BLOWER') || key.includes('ROTARY')) return 'epoxy';
+      if (key.includes('SEG') || key.includes('SEGMENT')) return 'seg10';
+      return 'rm';
+    }
+
     // A.1 Equipment and Vehicles
     writeSumSectionHeader(sumSheet, row, 'A.1 Equipment and Vehicles');
     row++;
     for (const item of summaryEquipment) {
       const t = writeSumEquipRow(sumSheet, row, item);
       addTotals(totalEquip, t);
+      const sec = classifyEquipSection(item.eqKey);
+      if (sec === 'rm') addTotals(rmEquipTotal, t);
+      else if (sec === 'epoxy') addTotals(epoxyEquipTotal, t);
+      else addTotals(seg10EquipTotal, t);
       row++;
     }
 
@@ -699,6 +719,10 @@ router.get('/export', authenticateBilling, async (req, res) => {
       for (const item of summaryMinorEquip[cat]) {
         const t = writeSumEquipRow(sumSheet, row, item);
         addTotals(totalEquip, t);
+        const sec = classifyEquipSection(item.eqKey);
+        if (sec === 'rm') addTotals(rmEquipTotal, t);
+        else if (sec === 'epoxy') addTotals(epoxyEquipTotal, t);
+        else addTotals(seg10EquipTotal, t);
         row++;
       }
     }
@@ -726,6 +750,7 @@ router.get('/export', authenticateBilling, async (req, res) => {
     for (const item of summaryManpowerRM) {
       const t = writeSumManpowerRow(sumSheet, row, item);
       addTotals(totalManpower, t);
+      addTotals(rmManpowerTotal, t);
       row++;
     }
 
@@ -738,6 +763,7 @@ router.get('/export', authenticateBilling, async (req, res) => {
     for (const item of summaryManpowerEpoxy) {
       const t = writeSumManpowerRow(sumSheet, row, item);
       addTotals(totalManpower, t);
+      addTotals(epoxyManpowerTotal, t);
       row++;
     }
 
@@ -750,6 +776,7 @@ router.get('/export', authenticateBilling, async (req, res) => {
     for (const item of summaryManpowerSeg10) {
       const t = writeSumManpowerRow(sumSheet, row, item);
       addTotals(totalManpower, t);
+      addTotals(seg10ManpowerTotal, t);
       row++;
     }
 
@@ -806,72 +833,138 @@ router.get('/export', authenticateBilling, async (req, res) => {
     writeSumTotalsRow(sumSheet, row, 'Sub-total of C', totalMaterials);
     row++;
 
-    // ── FULL BILLING COMPUTATION at bottom of SUMMARY sheet ──
-    // blank spacer rows
-    row += 2;
+    // ── 3 SEPARATE INDIRECT COST SECTIONS at bottom of SUMMARY sheet ──
+    // Helper: write one INDIRECT COST section
+    function writeSumIndirectSection(sheet, startRow, sectionLabel, bgColor, directCostF, directCostL, showColL) {
+      let r = startRow;
 
-    // A. DIRECT RESOURCES = Sub-total A + Sub-total B + Sub-total C
-    const directResources = {
-      amount: totalEquip.amount + totalManpower.amount + totalMaterials.amount,
-      actualAmount: totalEquip.actualAmount + totalManpower.actualAmount + totalMaterials.actualAmount,
-      daysAmount: totalEquip.daysAmount + totalManpower.daysAmount + totalMaterials.daysAmount,
-    };
+      // blank spacer row
+      r++;
 
-    // E. G&A Overhead (11% of C)
-    const gaOverhead = {
-      amount: directResources.amount * 0.11,
-      actualAmount: directResources.actualAmount * 0.11,
-      daysAmount: directResources.daysAmount * 0.11,
-    };
-
-    // F. Profit (15% of C)
-    const profit = {
-      amount: directResources.amount * 0.15,
-      actualAmount: directResources.actualAmount * 0.15,
-      daysAmount: directResources.daysAmount * 0.15,
-    };
-
-    // D. VAT 12% of (A+B+C)
-    const vat = {
-      amount: (directResources.amount + gaOverhead.amount + profit.amount) * 0.12,
-      actualAmount: (directResources.actualAmount + gaOverhead.actualAmount + profit.actualAmount) * 0.12,
-      daysAmount: (directResources.daysAmount + gaOverhead.daysAmount + profit.daysAmount) * 0.12,
-    };
-
-    // GRAND TOTAL = A+B+C+D
-    const grandTotal = {
-      amount: directResources.amount + gaOverhead.amount + profit.amount + vat.amount,
-      actualAmount: directResources.actualAmount + gaOverhead.actualAmount + profit.actualAmount + vat.actualAmount,
-      daysAmount: directResources.daysAmount + gaOverhead.daysAmount + profit.daysAmount + vat.daysAmount,
-    };
-
-    const billingComputation = [
-      { label: 'INDIRECT COST', totals: directResources },
-      { label: 'E : General and administrative, Overhead, Contingencies and Miscellaneous (11%)', totals: gaOverhead },
-      { label: 'F : Profit (15% of C)', totals: profit },
-      { label: 'G : VAT (12% of C+E+F)', totals: vat },
-      { label: 'TOTAL COST (monthly)', totals: grandTotal },
-    ];
-
-    billingComputation.forEach((item, idx) => {
-      const r = sumSheet.getRow(row);
-      r.getCell(2).value = item.label;
-      r.getCell(2).font = { bold: true, size: idx === 4 ? 12 : 10 };
-      setNum(r.getCell(6), item.totals.amount);
-      r.getCell(6).font = { bold: true, size: idx === 4 ? 11 : 10 };
-      setNum(r.getCell(11), item.totals.actualAmount);
-      r.getCell(11).font = { bold: true, size: idx === 4 ? 11 : 10 };
-      setNum(r.getCell(12), item.totals.daysAmount);
-      r.getCell(12).font = { bold: true, size: idx === 4 ? 11 : 10 };
-      if (idx === 4) {
-        // Highlight GRAND TOTAL row
-        for (let c = 2; c <= 12; c++) {
-          applyHeaderFill(r.getCell(c), 'FFFFF9C4');
-        }
+      // Section header row with colored background
+      const headerRow = sheet.getRow(r);
+      headerRow.getCell(2).value = sectionLabel;
+      headerRow.getCell(2).font = { bold: true, size: 11 };
+      for (let c = 2; c <= 12; c++) {
+        applyHeaderFill(headerRow.getCell(c), bgColor);
       }
-      setBorderedRow(r, 2, 12);
-      row++;
-    });
+      setBorderedRow(headerRow, 2, 12);
+      r++;
+
+      // INDIRECT COST row
+      const indirectRow = sheet.getRow(r);
+      indirectRow.getCell(2).value = 'INDIRECT COST';
+      indirectRow.getCell(2).font = { bold: true, size: 10 };
+      setNum(indirectRow.getCell(6), directCostF);
+      indirectRow.getCell(6).font = { bold: true };
+      if (showColL) {
+        setNum(indirectRow.getCell(12), directCostL);
+        indirectRow.getCell(12).font = { bold: true };
+      }
+      setBorderedRow(indirectRow, 2, 12);
+      r++;
+
+      // E: G&A Overhead (11%)
+      const gaF = directCostF * 0.11;
+      const gaL = directCostL * 0.11;
+      const gaRow = sheet.getRow(r);
+      gaRow.getCell(2).value = 'E : General and administrative, Overhead, Contingencies and Miscellaneous (11%)';
+      gaRow.getCell(2).font = { bold: false, size: 10 };
+      setNum(gaRow.getCell(4), 0.11);
+      setNum(gaRow.getCell(6), gaF);
+      if (showColL) {
+        setNum(gaRow.getCell(12), gaL);
+      }
+      setBorderedRow(gaRow, 2, 12);
+      r++;
+
+      // F: Profit (15%)
+      const profitF = directCostF * 0.15;
+      const profitL = directCostL * 0.15;
+      const profitRow = sheet.getRow(r);
+      profitRow.getCell(2).value = 'F : Profit (15% of C)';
+      profitRow.getCell(2).font = { bold: false, size: 10 };
+      setNum(profitRow.getCell(4), 0.15);
+      setNum(profitRow.getCell(6), profitF);
+      if (showColL) {
+        setNum(profitRow.getCell(12), profitL);
+      }
+      setBorderedRow(profitRow, 2, 12);
+      r++;
+
+      // G: VAT (12% of C+E+F)
+      const vatF = (directCostF + gaF + profitF) * 0.12;
+      const vatL = (directCostL + gaL + profitL) * 0.12;
+      const vatRow = sheet.getRow(r);
+      vatRow.getCell(2).value = 'G : VAT (12% of (C+E+F))';
+      vatRow.getCell(2).font = { bold: false, size: 10 };
+      setNum(vatRow.getCell(4), 0.12);
+      setNum(vatRow.getCell(6), vatF);
+      if (showColL) {
+        setNum(vatRow.getCell(12), vatL);
+      }
+      setBorderedRow(vatRow, 2, 12);
+      r++;
+
+      // TOTAL COST (monthly)
+      const totalF = directCostF + gaF + profitF + vatF;
+      const totalL = directCostL + gaL + profitL + vatL;
+      const totalRow = sheet.getRow(r);
+      totalRow.getCell(2).value = 'TOTAL COST (monthly)';
+      totalRow.getCell(2).font = { bold: true, size: 11 };
+      setNum(totalRow.getCell(6), totalF);
+      totalRow.getCell(6).font = { bold: true, size: 11 };
+      if (showColL) {
+        setNum(totalRow.getCell(12), totalL);
+        totalRow.getCell(12).font = { bold: true, size: 11 };
+      }
+      // Yellow background for TOTAL COST row
+      for (let c = 2; c <= 12; c++) {
+        applyHeaderFill(totalRow.getCell(c), 'FFFFF9C4');
+      }
+      setBorderedRow(totalRow, 2, 12);
+      r++;
+
+      return { nextRow: r, totalF, totalL };
+    }
+
+    // blank spacer row after Sub-total of C
+    row++;
+
+    // Section 1: ROUTINE MAINTENANCE (green background)
+    const rmDirectF = rmEquipTotal.amount + rmManpowerTotal.amount;
+    const rmDirectL = rmEquipTotal.daysAmount + rmManpowerTotal.daysAmount;
+    const rmSection = writeSumIndirectSection(sumSheet, row, 'ROUTINE MAINTENANCE', 'FF90EE90', rmDirectF, rmDirectL, true);
+    row = rmSection.nextRow;
+
+    // Section 2: BRIDGE EPOXY (orange background)
+    // Epoxy direct cost includes equipment + manpower + materials
+    const epoxyDirectF = epoxyEquipTotal.amount + epoxyManpowerTotal.amount + totalMaterials.amount;
+    const epoxyDirectL = epoxyEquipTotal.daysAmount + epoxyManpowerTotal.daysAmount + totalMaterials.daysAmount;
+    const epoxySection = writeSumIndirectSection(sumSheet, row, 'BRIDGE EPOXY', 'FFFFA500', epoxyDirectF, epoxyDirectL, false);
+    row = epoxySection.nextRow;
+
+    // Section 3: SEGMENT 10/CONNECTOR (blue background)
+    const seg10DirectF = seg10EquipTotal.amount + seg10ManpowerTotal.amount;
+    const seg10DirectL = seg10EquipTotal.daysAmount + seg10ManpowerTotal.daysAmount;
+    const seg10Section = writeSumIndirectSection(sumSheet, row, 'SEGMENT 10/CONNECTOR', 'FF87CEEB', seg10DirectF, seg10DirectL, false);
+    row = seg10Section.nextRow;
+
+    // blank spacer row
+    row++;
+
+    // GRAND TOTAL = sum of all 3 TOTAL COST values
+    const summaryGrandTotalF = rmSection.totalF + epoxySection.totalF + seg10Section.totalF;
+    const summaryGrandTotalL = rmSection.totalL + epoxySection.totalL + seg10Section.totalL;
+    const grandTotalRow = sumSheet.getRow(row);
+    grandTotalRow.getCell(2).value = 'GRAND TOTAL';
+    grandTotalRow.getCell(2).font = { bold: true, size: 13 };
+    setNum(grandTotalRow.getCell(6), summaryGrandTotalF);
+    grandTotalRow.getCell(6).font = { bold: true, size: 13 };
+    setNum(grandTotalRow.getCell(12), summaryGrandTotalL);
+    grandTotalRow.getCell(12).font = { bold: true, size: 13 };
+    setBorderedRow(grandTotalRow, 2, 12);
+    row++;
 
     // ═══════════════════════════════════════════════════════════════
     // ── SHEET: CA SUMMARY — matches "CA SUMMARY (2)" from original ──
