@@ -1188,7 +1188,31 @@ router.get('/export', authenticateBilling, async (req, res) => {
     caRow += 2;
 
     // Grand total for SEGMENT 10/CONNECTOR
-    writeCAGrandTotal(caSheet, caRow, seg10EqTotal, seg10MpTotal, { actual: 0, absent: 0, billed: 0 });
+    caRow = writeCAGrandTotal(caSheet, caRow, seg10EqTotal, seg10MpTotal, { actual: 0, absent: 0, billed: 0 });
+    caRow += 1;
+
+    // GRAND TOTAL — sum of all 3 sections
+    const allSections = [
+      { eq: epoxyEqTotal, mp: epoxyMpTotal, mat: epoxyMatTotal },
+      { eq: rmEqTotal, mp: rmMpTotal, mat: { actual: 0, absent: 0, billed: 0 } },
+      { eq: seg10EqTotal, mp: seg10MpTotal, mat: { actual: 0, absent: 0, billed: 0 } },
+    ];
+    let overallGrand = 0;
+    for (const s of allSections) {
+      const direct = s.eq.billed + s.mp.billed + s.mat.billed;
+      const ga = direct * 0.11;
+      const prof = direct * 0.15;
+      const vt = (direct + ga + prof) * 0.12;
+      overallGrand += direct + ga + prof + vt;
+    }
+    const grandRow = caSheet.getRow(caRow);
+    grandRow.getCell(2).value = 'GRAND TOTAL';
+    grandRow.getCell(2).font = { bold: true, size: 13 };
+    setNum(grandRow.getCell(10), overallGrand);
+    grandRow.getCell(10).font = { bold: true, size: 13 };
+    applyHeaderFill(grandRow.getCell(2), 'FFFFF9C4');
+    applyHeaderFill(grandRow.getCell(10), 'FFFFF9C4');
+    setBorderedRow(grandRow, 2, 10);
 
     // ── Write response ──
     const filename = `billing_${monthName}_${year}.xlsx`;
