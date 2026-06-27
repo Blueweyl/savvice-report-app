@@ -13,6 +13,7 @@ export default function Register() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   useEffect(() => {
     api.get('/departments').then((res) => setDepartments(res.data));
@@ -28,14 +29,53 @@ export default function Register() {
         ...form,
         department_id: parseInt(form.department_id),
       });
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      navigate('/dashboard');
+
+      if (data.pending) {
+        setPendingApproval(true);
+      } else if (data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        navigate('/dashboard');
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Registration failed');
     } finally {
       setLoading(false);
     }
+  }
+
+  if (pendingApproval) {
+    return (
+      <div className="min-h-screen bg-[#1a1a2e] flex items-center justify-center px-4">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <img src="/savvice-logo.png" alt="Savvice Corporation" className="h-20 mx-auto mb-4 bg-white rounded-lg px-4 py-2" />
+            <h1 className="text-2xl font-bold text-white">
+              Routine Maintenance Department
+            </h1>
+            <p className="text-gray-400 mt-1">Report Management System</p>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md p-8 text-center">
+            <div className="mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-800 mb-3">Registration Submitted!</h2>
+            <p className="text-gray-600 mb-6">
+              Your registration has been submitted successfully. Please wait for admin approval before you can log in.
+            </p>
+            <Link
+              to="/login"
+              className="inline-block bg-[#1e3a8a] hover:bg-[#1e3070] text-white font-medium py-2.5 px-6 rounded-lg transition"
+            >
+              Back to Login
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

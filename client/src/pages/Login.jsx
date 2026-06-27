@@ -6,11 +6,13 @@ export default function Login() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
+  const [errorType, setErrorType] = useState(''); // 'pending', 'rejected', or 'general'
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    setErrorType('');
     setLoading(true);
 
     try {
@@ -19,7 +21,15 @@ export default function Login() {
       localStorage.setItem('user', JSON.stringify(data.user));
       navigate(data.user.role === 'admin' ? '/admin' : '/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed');
+      const msg = err.response?.data?.error || 'Login failed';
+      setError(msg);
+      if (msg.includes('pending approval')) {
+        setErrorType('pending');
+      } else if (msg.includes('rejected')) {
+        setErrorType('rejected');
+      } else {
+        setErrorType('general');
+      }
     } finally {
       setLoading(false);
     }
@@ -39,7 +49,35 @@ export default function Login() {
         <div className="bg-white rounded-lg shadow-xl p-8">
           <h2 className="text-2xl font-semibold text-gray-800 mb-6">Sign In</h2>
 
-          {error && (
+          {error && errorType === 'pending' && (
+            <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 p-4 rounded-lg mb-4 text-sm">
+              <div className="flex items-start gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="font-semibold">Account Pending Approval</p>
+                  <p className="mt-1">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && errorType === 'rejected' && (
+            <div className="bg-red-50 border border-red-300 text-red-800 p-4 rounded-lg mb-4 text-sm">
+              <div className="flex items-start gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                <div>
+                  <p className="font-semibold">Account Rejected</p>
+                  <p className="mt-1">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && errorType === 'general' && (
             <div className="bg-red-50 text-red-600 p-3 rounded mb-4 text-sm">
               {error}
             </div>

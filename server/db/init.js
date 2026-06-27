@@ -216,6 +216,15 @@ async function init() {
   try { await pool.query('ALTER TABLE reports ALTER COLUMN photo_before TYPE TEXT'); } catch (e) {}
   try { await pool.query('ALTER TABLE reports ALTER COLUMN photo_after TYPE TEXT'); } catch (e) {}
 
+  // Add account_status column for registration approval system
+  try {
+    await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) DEFAULT 'pending' CHECK (account_status IN ('pending', 'approved', 'rejected'))");
+  } catch (e) {}
+  // Ensure existing admin account is approved
+  try {
+    await pool.query("UPDATE users SET account_status = 'approved' WHERE email = 'admin@savvice.com'");
+  } catch (e) {}
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS attachments (
       id SERIAL PRIMARY KEY,
