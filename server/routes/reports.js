@@ -305,6 +305,148 @@ router.patch('/:id/review', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+// PATCH /api/reports/:id — admin edit report fields
+router.patch('/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const allowedFields = [
+      'activity_id', 'report_date', 'team', 'status_bound',
+      'activity_description', 'location_from', 'location_to',
+      'accomplishment', 'equipment', 'operator_name',
+      'crew_names', 'remarks'
+    ];
+
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = $${paramIndex}`);
+        let val = req.body[field];
+        if (field === 'accomplishment') val = parseFloat(val) || 0;
+        if (field === 'activity_id') val = parseInt(val);
+        values.push(val);
+        paramIndex++;
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    // If activity_id is being changed, update department_id too
+    if (req.body.activity_id) {
+      const activity = await pool.query(
+        'SELECT department_id FROM activities WHERE id = $1',
+        [parseInt(req.body.activity_id)]
+      );
+      if (activity.rows.length === 0) {
+        return res.status(400).json({ error: 'Invalid activity' });
+      }
+      updates.push(`department_id = $${paramIndex}`);
+      values.push(activity.rows[0].department_id);
+      paramIndex++;
+    }
+
+    values.push(req.params.id);
+    const result = await pool.query(
+      `UPDATE reports SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Re-fetch with joins for full data
+    const full = await pool.query(
+      `SELECT r.*, a.name as activity_name, d.name as department_name, u.name as author_name,
+              rv.name as reviewer_name
+       FROM reports r
+       JOIN activities a ON r.activity_id = a.id
+       JOIN departments d ON r.department_id = d.id
+       JOIN users u ON r.author_id = u.id
+       LEFT JOIN users rv ON r.reviewed_by = rv.id
+       WHERE r.id = $1`,
+      [req.params.id]
+    );
+
+    res.json(full.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/reports/:id/status — admin change report status to any value
+router.patch('/:id/status', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { status, admin_comment } = req.body;
+
+    if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be pending, approved, or rejected' });
+    }
+
+    let result;
+    if (status === 'pending') {
+      // Reset review fields when setting back to pending
+      result = await pool.query(
+        `UPDATE reports
+         SET status = $1, admin_comment = NULL, reviewed_by = NULL, reviewed_at = NULL
+         WHERE id = $2
+         RETURNING *`,
+        [status, req.params.id]
+      );
+    } else {
+      result = await pool.query(
+        `UPDATE reports
+         SET status = $1, admin_comment = $2, reviewed_by = $3, reviewed_at = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [status, admin_comment || null, req.user.id, req.params.id]
+      );
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    // Re-fetch with joins
+    const full = await pool.query(
+      `SELECT r.*, a.name as activity_name, d.name as department_name, u.name as author_name,
+              rv.name as reviewer_name
+       FROM reports r
+       JOIN activities a ON r.activity_id = a.id
+       JOIN departments d ON r.department_id = d.id
+       JOIN users u ON r.author_id = u.id
+       LEFT JOIN users rv ON r.reviewed_by = rv.id
+       WHERE r.id = $1`,
+      [req.params.id]
+    );
+
+    res.json(full.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/reports/:id — admin delete report permanently
+router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM reports WHERE id = $1 RETURNING id',
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    res.json({ message: 'Report deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve photo from database - supports ?token= query param for auth
 router.get('/:id/photo/:type', (req, res, next) => {
   // Authenticate via Authorization header or ?token= query param

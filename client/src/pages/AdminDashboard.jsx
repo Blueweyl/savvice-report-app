@@ -94,6 +94,16 @@ export default function AdminDashboard() {
     window.open(url, '_blank');
   }, [filters]);
 
+  async function handleDeleteReport(reportId) {
+    if (!window.confirm('Are you sure? This cannot be undone.')) return;
+    try {
+      await api.delete(`/reports/${reportId}`);
+      setReports(reports.filter((r) => r.id !== reportId));
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete report');
+    }
+  }
+
   const counts = {
     total: reports.length,
     pending: reports.filter((r) => r.status === 'pending').length,
@@ -341,6 +351,7 @@ export default function AdminDashboard() {
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Team</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Bound</th>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Review</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -368,6 +379,19 @@ export default function AdminDashboard() {
                     {(!report.status_bound || report.status_bound === 'pending') && <span className="text-gray-500 font-semibold text-xs">PENDING</span>}
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={report.status} /></td>
+                  <td className="px-4 py-3">
+                    {report.status === 'rejected' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteReport(report.id); }}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded transition"
+                        title="Delete report"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
