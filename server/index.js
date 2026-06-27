@@ -10,6 +10,7 @@ const exportRoutes = require('./routes/export');
 const scheduleRoutes = require('./routes/schedule');
 const attendanceRoutes = require('./routes/attendance');
 const billingRoutes = require('./routes/billing');
+const equipmentTrackingRoutes = require('./routes/equipment-tracking');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,6 +27,7 @@ app.use('/api/export', exportRoutes);
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/equipment-tracking', equipmentTrackingRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', name: 'Savvice Routine Maintenance Department API' });

@@ -156,6 +156,41 @@ router.get('/auto-days', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/billing/auto-equipment-days?month=5&year=2026 — auto-calculated days from equipment tracking
+router.get('/auto-equipment-days', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    if (!month || !year) {
+      return res.status(400).json({ error: 'month and year are required' });
+    }
+
+    const result = await pool.query(`
+      SELECT be.id as billing_equipment_id, be.equipment_name, be.daily_rate,
+        COALESCE(COUNT(CASE WHEN et.status = 'deployed' THEN 1 END), 0)::int as days_deployed
+      FROM billing_equipment be
+      LEFT JOIN equipment_tracking et ON be.id = et.billing_equipment_id
+        AND EXTRACT(MONTH FROM et.tracking_date) = $1
+        AND EXTRACT(YEAR FROM et.tracking_date) = $2
+      WHERE be.is_active = true
+      GROUP BY be.id, be.equipment_name, be.daily_rate
+      ORDER BY be.category, be.id
+    `, [month, year]);
+
+    const rows = result.rows.map(r => ({
+      billing_equipment_id: r.billing_equipment_id,
+      equipment_name: r.equipment_name,
+      days_deployed: r.days_deployed,
+      daily_rate: parseFloat(r.daily_rate),
+      auto_amount: parseFloat((r.days_deployed * parseFloat(r.daily_rate)).toFixed(2)),
+    }));
+
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching auto-equipment-days:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/billing/summary?month=5&year=2026 — calculate billing summary
 router.get('/summary', authenticate, requireAdmin, async (req, res) => {
   try {

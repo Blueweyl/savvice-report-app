@@ -10,6 +10,7 @@ import Summary from './pages/Summary';
 import Schedule from './pages/Schedule';
 import Attendance from './pages/Attendance';
 import Billing from './pages/Billing';
+import Equipment from './pages/Equipment';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children, role }) {
@@ -74,6 +75,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <Layout><Attendance /></Layout>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/equipment"
+          element={
+            <PrivateRoute role="admin">
+              <Layout><Equipment /></Layout>
             </PrivateRoute>
           }
         />

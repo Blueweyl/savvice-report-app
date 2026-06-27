@@ -440,6 +440,20 @@ async function init() {
       [team, pos, name, desc, rate, group]
     );
   }
+  // ── Equipment tracking table ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS equipment_tracking (
+      id SERIAL PRIMARY KEY,
+      billing_equipment_id INTEGER REFERENCES billing_equipment(id),
+      tracking_date DATE NOT NULL,
+      status VARCHAR(20) DEFAULT 'deployed' CHECK (status IN ('deployed', 'standby', 'breakdown', 'maintenance')),
+      hours_used DECIMAL(5,2) DEFAULT 0,
+      remarks TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(billing_equipment_id, tracking_date)
+    );
+  `);
+
   console.log('Billing data seeded');
 
   for (const dept of DEPARTMENTS) {

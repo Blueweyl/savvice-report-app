@@ -27,6 +27,10 @@ export default function Billing() {
   const [attendanceDays, setAttendanceDays] = useState({});  // { billing_manpower_id: days_present }
   const [autoFilling, setAutoFilling] = useState(false);
 
+  // Equipment tracking auto-fill state
+  const [eqTrackingDays, setEqTrackingDays] = useState({});  // { billing_equipment_id: days_deployed }
+  const [eqAutoFilling, setEqAutoFilling] = useState(false);
+
   // Summary state
   const [summary, setSummary] = useState(null);
   const [sumLoading, setSumLoading] = useState(false);
@@ -112,14 +116,55 @@ export default function Billing() {
     setAutoFilling(false);
   }
 
+  // Load equipment tracking days when equipment tab is active
+  const loadEquipmentTrackingDays = useCallback(async () => {
+    try {
+      const res = await api.get('/billing/auto-equipment-days', { params: { month, year } });
+      const daysMap = {};
+      res.data.forEach(r => { daysMap[r.billing_equipment_id] = r.days_deployed; });
+      setEqTrackingDays(daysMap);
+    } catch (err) {
+      console.error('Error loading equipment tracking days:', err);
+    }
+  }, [month, year]);
+
+  // Auto-fill equipment days_used from equipment tracking
+  async function autoFillFromEquipmentTracking() {
+    setEqAutoFilling(true);
+    try {
+      const res = await api.get('/billing/auto-equipment-days', { params: { month, year } });
+      const daysMap = {};
+      const trackMap = {};
+      res.data.forEach(r => {
+        daysMap[r.billing_equipment_id] = r.days_deployed;
+        trackMap[r.billing_equipment_id] = r.days_deployed;
+      });
+      setEqDaysUsed(prev => {
+        const updated = { ...prev };
+        Object.entries(daysMap).forEach(([id, days]) => {
+          updated[id] = days;
+        });
+        return updated;
+      });
+      setEqTrackingDays(trackMap);
+      setMessage('Equipment days auto-filled from Equipment Tracking records!');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setMessage('Error auto-filling from equipment tracking: ' + (err.response?.data?.error || err.message));
+    }
+    setEqAutoFilling(false);
+  }
+
   // Load on tab change / month-year change
   useEffect(() => {
-    if (activeTab === 'equipment') loadEquipment();
-    else if (activeTab === 'manpower') {
+    if (activeTab === 'equipment') {
+      loadEquipment();
+      loadEquipmentTrackingDays();
+    } else if (activeTab === 'manpower') {
       loadManpower();
       loadAttendanceDays();
     }
-  }, [activeTab, loadEquipment, loadManpower, loadAttendanceDays]);
+  }, [activeTab, loadEquipment, loadManpower, loadAttendanceDays, loadEquipmentTrackingDays]);
 
   // Save equipment records
   async function saveEquipmentRecords() {
@@ -277,6 +322,31 @@ export default function Billing() {
             <div className="p-8 text-center text-gray-500">Loading equipment...</div>
           ) : (
             <>
+              {/* Auto-fill from Equipment Tracking button */}
+              <div className="p-4 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={autoFillFromEquipmentTracking}
+                    disabled={eqAutoFilling}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-medium text-sm transition disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {eqAutoFilling ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        Auto-filling...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        Auto-fill from Equipment Tracking
+                      </>
+                    )}
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    Fills "Days Used" with deployed-day counts from the Equipment Tracking system for {MONTH_NAMES[month]} {year}
+                  </span>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -316,15 +386,22 @@ export default function Billing() {
                             <td className="px-3 py-2 text-center">{parseFloat(eq.contracted_qty)}</td>
                             <td className="px-3 py-2 text-right font-mono">{formatCurrency(eq.daily_rate)}</td>
                             <td className="px-3 py-2 text-center">
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={eqDaysUsed[eq.id] ?? ''}
-                                onChange={e => setEqDaysUsed(prev => ({ ...prev, [eq.id]: e.target.value }))}
-                                className="w-20 border border-gray-300 rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="0"
-                              />
+                              <div className="flex flex-col items-center">
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  min="0"
+                                  value={eqDaysUsed[eq.id] ?? ''}
+                                  onChange={e => setEqDaysUsed(prev => ({ ...prev, [eq.id]: e.target.value }))}
+                                  className="w-20 border border-gray-300 rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder="0"
+                                />
+                                {eqTrackingDays[eq.id] !== undefined && (
+                                  <span className="text-xs text-gray-400 mt-0.5">
+                                    Tracking: {eqTrackingDays[eq.id]} {eqTrackingDays[eq.id] === 1 ? 'day' : 'days'}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-right font-mono font-semibold">
                               {formatCurrency(amount)}
