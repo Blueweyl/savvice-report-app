@@ -38,6 +38,10 @@ export default function ActivityDashboard() {
   const [records, setRecords] = useState([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
 
+  const [newGroupName, setNewGroupName] = useState('');
+  const [addingGroup, setAddingGroup] = useState(false);
+  const [groupError, setGroupError] = useState('');
+
   useEffect(() => {
     api.get('/departments').then(res => {
       const sorted = [...res.data].sort((a, b) => DEPARTMENT_ORDER.indexOf(a.name) - DEPARTMENT_ORDER.indexOf(b.name));
@@ -53,6 +57,21 @@ export default function ActivityDashboard() {
       .then(res => setGroups(res.data))
       .catch(err => console.error('Error loading tool groups:', err))
       .finally(() => setGroupsLoading(false));
+  }
+
+  async function addGroup() {
+    const name = newGroupName.trim();
+    if (!name) return;
+    setAddingGroup(true);
+    setGroupError('');
+    try {
+      const res = await api.post('/daily-tools/groups', { department_id: selectedDept.id, name });
+      setGroups(prev => [...prev, res.data]);
+      setNewGroupName('');
+    } catch (err) {
+      setGroupError(err.response?.data?.error || err.message);
+    }
+    setAddingGroup(false);
   }
 
   function openGroup(group) {
@@ -139,6 +158,26 @@ export default function ActivityDashboard() {
           ← Back to Departments
         </button>
         <h2 className="text-lg font-bold text-[#1a1a2e] mb-4">{selectedDept.name} — Activity Groups</h2>
+
+        <div className="flex flex-wrap items-center gap-2 mb-4 bg-white p-3 rounded-lg border border-gray-200">
+          <input
+            type="text"
+            value={newGroupName}
+            onChange={e => setNewGroupName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addGroup()}
+            placeholder={`Add a group for ${selectedDept.name} (e.g. ${selectedDept.name} Segment 1)`}
+            className="flex-1 min-w-[220px] border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <button
+            onClick={addGroup}
+            disabled={addingGroup || !newGroupName.trim()}
+            className="bg-[#1e3a8a] hover:bg-[#1e3a8a]/90 text-white px-4 py-1.5 rounded text-sm font-medium transition disabled:opacity-50"
+          >
+            {addingGroup ? 'Adding...' : '+ Add Group'}
+          </button>
+        </div>
+        {groupError && <p className="text-red-600 text-sm mb-4">{groupError}</p>}
+
         {groupsLoading ? (
           <div className="p-8 text-center text-gray-500">Loading groups...</div>
         ) : groups.length === 0 ? (

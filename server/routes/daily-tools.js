@@ -17,6 +17,33 @@ router.get('/groups', authenticate, async (req, res) => {
   }
 });
 
+// POST /api/daily-tools/groups — add a new activity group under a department
+// Body: { department_id, name }
+router.post('/groups', authenticate, async (req, res) => {
+  try {
+    const { department_id, name } = req.body;
+    if (!department_id || !name) {
+      return res.status(400).json({ error: 'department_id and name are required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO tool_groups (name, department_id, sort_order)
+       VALUES ($1, $2, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tool_groups WHERE department_id = $2))
+       ON CONFLICT (name) DO NOTHING RETURNING *`,
+      [name.trim(), department_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'A group with this name already exists' });
+    }
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating tool group:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/daily-tools/entries?group_id=&date=  — view records for a group (date optional)
 router.get('/entries', authenticate, async (req, res) => {
   try {
