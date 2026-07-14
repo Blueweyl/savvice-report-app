@@ -14,15 +14,6 @@ function computeStatus(qtyRequired, actualQty) {
     : { label: 'Short', className: 'bg-red-100 text-red-800 border-red-300' };
 }
 
-const emptyForm = {
-  entry_date: new Date().toISOString().split('T')[0],
-  category: CATEGORY_OPTIONS[0],
-  item_description: '',
-  qty_required: '',
-  actual_qty: '',
-  remarks: '',
-};
-
 export default function ActivityDashboard() {
   const [departments, setDepartments] = useState([]);
   const [selectedDept, setSelectedDept] = useState(null);
@@ -31,16 +22,28 @@ export default function ActivityDashboard() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [subTab, setSubTab] = useState('submit');
 
-  const [form, setForm] = useState(emptyForm);
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const [records, setRecords] = useState([]);
-  const [recordsLoading, setRecordsLoading] = useState(false);
-
   const [newGroupName, setNewGroupName] = useState('');
   const [addingGroup, setAddingGroup] = useState(false);
   const [groupError, setGroupError] = useState('');
+
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [items, setItems] = useState([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [sharedRemarks, setSharedRemarks] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const [openAddItemCategory, setOpenAddItemCategory] = useState(null);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemQtyRequired, setNewItemQtyRequired] = useState('');
+  const [newItemPhoto, setNewItemPhoto] = useState(null);
+  const [addingItem, setAddingItem] = useState(false);
+  const [addItemError, setAddItemError] = useState('');
+
+  const [lightboxPhoto, setLightboxPhoto] = useState(null);
+
+  const [records, setRecords] = useState([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
 
   useEffect(() => {
     api.get('/departments').then(res => {
@@ -77,15 +80,33 @@ export default function ActivityDashboard() {
   function openGroup(group) {
     setSelectedGroup(group);
     setSubTab('submit');
-    setForm(emptyForm);
+    setSharedRemarks('');
     setMessage('');
   }
+
+  const loadItems = useCallback(async () => {
+    if (!selectedGroup) return;
+    setItemsLoading(true);
+    try {
+      const res = await api.get('/daily-tools/entries', { params: { group_id: selectedGroup.id, date: entryDate } });
+      setItems(res.data.map(item => ({ ...item, actual_qty: item.actual_qty ?? 0 })));
+    } catch (err) {
+      console.error('Error loading tool entries:', err);
+    }
+    setItemsLoading(false);
+  }, [selectedGroup, entryDate]);
+
+  useEffect(() => {
+    if (selectedGroup && subTab === 'submit') {
+      loadItems();
+    }
+  }, [selectedGroup, subTab, loadItems]);
 
   const loadRecords = useCallback(async () => {
     if (!selectedGroup) return;
     setRecordsLoading(true);
     try {
-      const res = await api.get('/daily-tools/entries', { params: { group_id: selectedGroup.id } });
+      const res = await api.get('/daily-tools/entries/history', { params: { group_id: selectedGroup.id } });
       setRecords(res.data);
     } catch (err) {
       console.error('Error loading records:', err);
@@ -99,32 +120,73 @@ export default function ActivityDashboard() {
     }
   }, [selectedGroup, subTab, loadRecords]);
 
-  async function submitEntry() {
-    if (!form.item_description || form.qty_required === '' || form.actual_qty === '') {
-      setMessage('Item Description, Qty Required and Actual Qty are required.');
-      return;
-    }
-    setSubmitting(true);
+  function updateItemQty(itemId, value) {
+    setItems(prev => prev.map(i => (i.item_id === itemId ? { ...i, actual_qty: value } : i)));
+  }
+
+  async function saveEntries() {
+    setSaving(true);
     try {
-      await api.post('/daily-tools/entries', {
-        group_id: selectedGroup.id,
-        entry_date: form.entry_date,
-        category: form.category,
-        item_description: form.item_description,
-        qty_required: parseFloat(form.qty_required) || 0,
-        actual_qty: parseFloat(form.actual_qty) || 0,
-        remarks: form.remarks,
-      });
-      setMessage('Entry submitted.');
-      setForm({ ...emptyForm, entry_date: form.entry_date, category: form.category });
+      const entries = items.map(i => ({
+        item_id: i.item_id,
+        actual_qty: parseFloat(i.actual_qty) || 0,
+        remarks: sharedRemarks,
+      }));
+      await api.post('/daily-tools/entries', { date: entryDate, entries });
+      setMessage('Entries saved.');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
       setMessage('Error: ' + (err.response?.data?.error || err.message));
     }
-    setSubmitting(false);
+    setSaving(false);
   }
 
-  const status = computeStatus(form.qty_required, form.actual_qty);
+  function handlePhotoChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setNewItemPhoto(reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function addItem(category) {
+    if (!newItemName.trim()) return;
+    setAddingItem(true);
+    setAddItemError('');
+    try {
+      const res = await api.post('/daily-tools/items', {
+        group_id: selectedGroup.id,
+        category,
+        item_name: newItemName.trim(),
+        qty_required: parseFloat(newItemQtyRequired) || 1,
+        photo: newItemPhoto,
+      });
+      setItems(prev => [...prev, {
+        item_id: res.data.id,
+        category: res.data.category,
+        item_name: res.data.item_name,
+        qty_required: res.data.qty_required,
+        photo: res.data.photo,
+        actual_qty: 0,
+        remarks: null,
+      }]);
+      setNewItemName('');
+      setNewItemQtyRequired('');
+      setNewItemPhoto(null);
+      setOpenAddItemCategory(null);
+    } catch (err) {
+      setAddItemError(err.response?.data?.error || err.message);
+    }
+    setAddingItem(false);
+  }
+
+  function cancelAddItem() {
+    setOpenAddItemCategory(null);
+    setNewItemName('');
+    setNewItemQtyRequired('');
+    setNewItemPhoto(null);
+    setAddItemError('');
+  }
 
   // --- Step 1: pick a department ---
   if (!selectedDept) {
@@ -203,8 +265,23 @@ export default function ActivityDashboard() {
   }
 
   // --- Step 3: submit entry / view records for the selected group ---
+  const todayFormatted = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const itemsByCategory = CATEGORY_OPTIONS.reduce((acc, cat) => {
+    acc[cat] = items.filter(i => i.category === cat);
+    return acc;
+  }, {});
+
   return (
     <div>
+      {lightboxPhoto && (
+        <div
+          onClick={() => setLightboxPhoto(null)}
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 cursor-zoom-out p-6"
+        >
+          <img src={lightboxPhoto} alt="Item reference" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+        </div>
+      )}
+
       <button
         onClick={() => setSelectedGroup(null)}
         className="text-sm text-[#1e3a8a] hover:underline mb-4"
@@ -212,27 +289,37 @@ export default function ActivityDashboard() {
         ← Back to {selectedDept.name} groups
       </button>
 
-      <div className="bg-[#1e3a8a] text-white rounded-t-lg px-6 py-4">
-        <h2 className="text-lg font-bold">{selectedGroup.name} Tools</h2>
-        <p className="text-xs text-blue-200">Savvice Corporation — A Metro Pacific Tollway Company</p>
+      <div className="bg-[#0f1c3f] rounded-t-lg px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="bg-amber-500 rounded-lg w-11 h-11 flex items-center justify-center text-xl shrink-0">
+            🔧
+          </div>
+          <div>
+            <h2 className="text-white font-bold text-lg tracking-wide uppercase leading-tight">{selectedGroup.name} Tools</h2>
+            <p className="text-amber-400 text-[11px] font-semibold tracking-wide uppercase">Savvice Corporation — A Metro Pacific Tollway Company</p>
+          </div>
+        </div>
+        <div className="text-white text-xs font-medium text-right hidden sm:block">
+          {todayFormatted}
+        </div>
       </div>
 
       <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg shadow-sm">
         <div className="flex border-b border-gray-200">
           {[
-            { key: 'submit', label: 'Submit Entry' },
-            { key: 'records', label: 'View Records' },
+            { key: 'submit', label: 'Submit Entry', icon: '📄' },
+            { key: 'records', label: 'View Records', icon: '📋' },
           ].map(t => (
             <button
               key={t.key}
               onClick={() => setSubTab(t.key)}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition ${
+              className={`flex items-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-wide border-b-2 transition ${
                 subTab === t.key
-                  ? 'border-[#1e3a8a] text-[#1e3a8a]'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-amber-500 text-[#0f1c3f]'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              {t.label}
+              <span>{t.icon}</span>{t.label}
             </button>
           ))}
         </div>
@@ -244,79 +331,122 @@ export default function ActivityDashboard() {
         )}
 
         {subTab === 'submit' && (
-          <div className="p-6 space-y-4 max-w-2xl">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Date</label>
-              <input
-                type="date"
-                value={form.entry_date}
-                onChange={e => setForm({ ...form, entry_date: e.target.value })}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+          <div className="p-6 space-y-5 max-w-2xl">
+            <div className="bg-blue-50 border border-blue-100 text-blue-900 text-xs rounded px-4 py-2.5 flex items-center gap-2">
+              <span>📍</span>
+              <span>Each submission saves to the <strong>{selectedGroup.name} Tools</strong> master log sheet.</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Category *</label>
-                <select
-                  value={form.category}
-                  onChange={e => setForm({ ...form, category: e.target.value })}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {CATEGORY_OPTIONS.map(c => (
-                    <option key={c} value={c}>{c.toUpperCase()}</option>
-                  ))}
-                </select>
+            <div>
+              <div className="bg-[#1e3a8a] text-white text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-t flex items-center gap-2">
+                <span>📅</span> Date
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Item Description *</label>
+              <div className="border border-t-0 border-gray-200 rounded-b p-4">
+                <label className="block text-[11px] font-bold text-gray-500 uppercase mb-1">Date *</label>
                 <input
-                  type="text"
-                  value={form.item_description}
-                  onChange={e => setForm({ ...form, item_description: e.target.value })}
-                  placeholder="e.g. Grass Cutter"
+                  type="date"
+                  value={entryDate}
+                  onChange={e => setEntryDate(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Qty Required *</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.qty_required}
-                  onChange={e => setForm({ ...form, qty_required: e.target.value })}
-                  placeholder="e.g. 1"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Actual Qty (1st Shift) *</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.actual_qty}
-                  onChange={e => setForm({ ...form, actual_qty: e.target.value })}
-                  placeholder="e.g. 1"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </div>
+            {itemsLoading ? (
+              <div className="p-8 text-center text-gray-500">Loading checklist...</div>
+            ) : (
+              CATEGORY_OPTIONS.map(cat => (
+                <div key={cat}>
+                  <div className="bg-[#1e3a8a] text-white text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-t flex items-center gap-2">
+                    <span>🏷️</span> {cat}
+                  </div>
+                  <div className="border border-t-0 border-gray-200 rounded-b p-4 space-y-3">
+                    {itemsByCategory[cat].length === 0 && openAddItemCategory !== cat && (
+                      <p className="text-xs text-gray-400">No items yet.</p>
+                    )}
+
+                    {itemsByCategory[cat].map(item => (
+                      <div key={item.item_id} className="border border-gray-200 rounded-lg p-4 flex items-center gap-4">
+                        {item.photo && (
+                          <img
+                            src={item.photo}
+                            alt={item.item_name}
+                            onClick={() => setLightboxPhoto(item.photo)}
+                            className="w-12 h-12 object-cover rounded border border-gray-200 cursor-pointer shrink-0"
+                          />
+                        )}
+                        <div className="flex-1">
+                          <div className="font-bold text-[#0f1c3f] text-sm uppercase">{item.item_name}</div>
+                          <label className="block text-[11px] font-bold text-gray-500 uppercase mt-2 mb-1">Actual Qty (1st Shift) *</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.actual_qty}
+                            onChange={e => updateItemQty(item.item_id, e.target.value)}
+                            placeholder="e.g. 1"
+                            className={`w-full sm:w-40 border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                              parseFloat(item.actual_qty) < parseFloat(item.qty_required) ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    {openAddItemCategory === cat ? (
+                      <div className="border border-dashed border-gray-300 rounded-lg p-4 space-y-3">
+                        <input
+                          type="text"
+                          value={newItemName}
+                          onChange={e => setNewItemName(e.target.value)}
+                          placeholder="Item name, e.g. Grass Cutter"
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          value={newItemQtyRequired}
+                          onChange={e => setNewItemQtyRequired(e.target.value)}
+                          placeholder="Qty required, e.g. 1"
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <div className="flex items-center gap-3">
+                          <input type="file" accept="image/*" onChange={handlePhotoChange} className="text-xs" />
+                          {newItemPhoto && (
+                            <img src={newItemPhoto} alt="Preview" className="w-14 h-14 object-cover rounded border border-gray-200" />
+                          )}
+                        </div>
+                        {addItemError && <p className="text-red-600 text-xs">{addItemError}</p>}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => addItem(cat)}
+                            disabled={addingItem || !newItemName.trim()}
+                            className="bg-[#1e3a8a] hover:bg-[#1e3a8a]/90 text-white px-4 py-1.5 rounded text-sm font-medium transition disabled:opacity-50"
+                          >
+                            {addingItem ? 'Adding...' : 'Save Item'}
+                          </button>
+                          <button onClick={cancelAddItem} className="text-gray-500 text-sm px-3 hover:text-gray-700">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setOpenAddItemCategory(cat)}
+                        className="text-xs text-[#1e3a8a] font-bold hover:underline"
+                      >
+                        + Add Item
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Computed Status</label>
-              <span className={`inline-block px-3 py-1 rounded text-xs font-bold border ${status ? status.className : 'bg-gray-100 text-gray-400 border-gray-200'}`}>
-                {status ? status.label : '—'}
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Remarks</label>
+              <label className="block text-[11px] font-bold text-gray-500 uppercase mb-1">Remarks</label>
               <textarea
-                value={form.remarks}
-                onChange={e => setForm({ ...form, remarks: e.target.value })}
+                value={sharedRemarks}
+                onChange={e => setSharedRemarks(e.target.value)}
                 placeholder="Optional notes (e.g. reason for shortage, condition, etc.)"
                 rows={2}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -324,12 +454,14 @@ export default function ActivityDashboard() {
             </div>
 
             <button
-              onClick={submitEntry}
-              disabled={submitting}
-              className="w-full bg-[#1e3a8a] hover:bg-[#1e3a8a]/90 text-white py-3 rounded font-bold transition disabled:opacity-50"
+              onClick={saveEntries}
+              disabled={saving || items.length === 0}
+              className="w-full bg-[#0f1c3f] hover:bg-[#0f1c3f]/90 text-white py-3 rounded font-bold uppercase tracking-wide transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {submitting ? 'Submitting...' : 'Submit Entry'}
+              <span>📤</span>{saving ? 'Submitting...' : 'Submit Entry'}
             </button>
+
+            <p className="text-right text-[10px] text-gray-400">QMS-SC-F178-Rev01_1224</p>
           </div>
         )}
 
@@ -358,10 +490,10 @@ export default function ActivityDashboard() {
                     {records.map((r, idx) => {
                       const s = computeStatus(r.qty_required, r.actual_qty);
                       return (
-                        <tr key={r.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <tr key={`${r.entry_date}-${r.item_name}-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                           <td className="px-3 py-2">{new Date(r.entry_date).toLocaleDateString()}</td>
                           <td className="px-3 py-2 text-gray-600">{r.category}</td>
-                          <td className="px-3 py-2 font-medium">{r.item_description}</td>
+                          <td className="px-3 py-2 font-medium">{r.item_name}</td>
                           <td className="px-3 py-2 text-center">{r.qty_required}</td>
                           <td className="px-3 py-2 text-center">{r.actual_qty}</td>
                           <td className="px-3 py-2 text-center">

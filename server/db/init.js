@@ -469,18 +469,43 @@ async function init() {
   // One-time cleanup of the old ungrouped placeholder tool_groups (self-limiting: only matches rows with no department)
   await pool.query('DELETE FROM tool_groups WHERE department_id IS NULL');
 
+  // Catalog of items per group (e.g. "Grass Cutter" under Tools and Accessories)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tool_items (
+      id SERIAL PRIMARY KEY,
+      group_id INTEGER REFERENCES tool_groups(id) ON DELETE CASCADE,
+      category VARCHAR(100) NOT NULL,
+      item_name VARCHAR(255) NOT NULL,
+      qty_required DECIMAL(10,2) NOT NULL DEFAULT 1,
+      photo TEXT,
+      sort_order INTEGER DEFAULT 0,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(group_id, item_name)
+    );
+  `);
+
+  // Daily actual-qty submissions against the catalog above.
+  // Replaces the earlier free-form (group_id/category/item_description) shape from before the
+  // catalog existed. That version was never used in production; this check is self-limiting —
+  // it only fires once, while the old column still exists, so it's safe to leave in place.
+  const oldToolEntriesSchema = await pool.query(
+    "SELECT 1 FROM information_schema.columns WHERE table_name = 'tool_entries' AND column_name = 'item_description'"
+  );
+  if (oldToolEntriesSchema.rows.length > 0) {
+    await pool.query('DROP TABLE tool_entries');
+  }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tool_entries (
       id SERIAL PRIMARY KEY,
-      group_id INTEGER REFERENCES tool_groups(id) ON DELETE CASCADE,
+      item_id INTEGER REFERENCES tool_items(id) ON DELETE CASCADE,
       entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
-      category VARCHAR(100) NOT NULL,
-      item_description VARCHAR(255) NOT NULL,
-      qty_required DECIMAL(10,2) NOT NULL DEFAULT 0,
       actual_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
       remarks TEXT,
       submitted_by INTEGER REFERENCES users(id),
-      created_at TIMESTAMP DEFAULT NOW()
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(item_id, entry_date)
     );
   `);
 
