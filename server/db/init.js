@@ -144,6 +144,12 @@ const TOOL_GROUPS_SEED = [
   ['Bridge', 'Bridge Epoxy 2'],
 ];
 
+// Catalog items per group: [groupName, category, itemName, qtyRequired]
+const TOOL_ITEMS_SEED = [
+  ['Bridge Mainline', 'Tools and Accessories', 'Grass Cutter', 1],
+  ['Bridge Mainline', 'Tools and Accessories', 'Pressure Washer', 1],
+];
+
 async function init() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS departments (
@@ -509,14 +515,25 @@ async function init() {
     );
   `);
 
+  const groupIds = {};
   for (let i = 0; i < TOOL_GROUPS_SEED.length; i++) {
     const [deptName, groupName] = TOOL_GROUPS_SEED[i];
-    await pool.query(
-      'INSERT INTO tool_groups (name, department_id, sort_order) VALUES ($1, $2, $3) ON CONFLICT (name) DO UPDATE SET department_id = $2, sort_order = $3',
+    const groupRes = await pool.query(
+      'INSERT INTO tool_groups (name, department_id, sort_order) VALUES ($1, $2, $3) ON CONFLICT (name) DO UPDATE SET department_id = $2, sort_order = $3 RETURNING id',
       [groupName, deptIds[deptName], i + 1]
     );
+    groupIds[groupName] = groupRes.rows[0].id;
   }
   console.log('Tool groups seeded: ' + TOOL_GROUPS_SEED.length + ' groups');
+
+  for (let i = 0; i < TOOL_ITEMS_SEED.length; i++) {
+    const [groupName, category, itemName, qtyRequired] = TOOL_ITEMS_SEED[i];
+    await pool.query(
+      'INSERT INTO tool_items (group_id, category, item_name, qty_required, sort_order) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (group_id, item_name) DO NOTHING',
+      [groupIds[groupName], category, itemName, qtyRequired, i + 1]
+    );
+  }
+  console.log('Tool items seeded: ' + TOOL_ITEMS_SEED.length + ' items');
 
   const adminExists = await pool.query("SELECT id FROM users WHERE email = 'admin@savvice.com'");
   if (adminExists.rows.length === 0) {
