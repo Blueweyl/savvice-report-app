@@ -42,9 +42,12 @@ export default function Layout({ children }) {
               <Link to="/attendance" className="text-sm text-gray-300 hover:text-white transition">
                 Attendance
               </Link>
+              <Link to="/equipment-dashboard" className="text-sm text-gray-300 hover:text-white transition">
+                Equipment
+              </Link>
               {user?.role === 'admin' && (
                 <Link to="/equipment" className="text-sm text-gray-300 hover:text-white transition">
-                  Equipment
+                  Equipment Tracking
                 </Link>
               )}
               {user?.role === 'admin' && (

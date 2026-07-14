@@ -136,6 +136,14 @@ const ACTIVITIES = {
   ],
 };
 
+// Activity Dashboard tool groups, nested under a department. More will be added per department over time.
+const TOOL_GROUPS_SEED = [
+  ['Bridge', 'Bridge Mainline'],
+  ['Bridge', 'Bridge RM Elevated'],
+  ['Bridge', 'Bridge Epoxy 1'],
+  ['Bridge', 'Bridge Epoxy 2'],
+];
+
 async function init() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS departments (
@@ -355,35 +363,10 @@ async function init() {
     );
   `);
 
-  // Seed billing equipment
-  const BILLING_EQUIPMENT = [
-    ['Vehicles', 'Fassi Truck', '', 'Bridge RM', 'nos.', 209762.09, 0.25, 1724.07],
-    ['Vehicles', 'Fassi with man basket', '', 'Bridge RM', 'nos.', 209762.09, 0.4, 2758.52],
-    ['Vehicles', 'Water truck', '', 'Bridge RM', 'nos.', 162848.50, 0.25, 1338.48],
-    ['Vehicles', 'Skid Loader', '', 'Bridge RM', 'nos.', 88573.91, 0.5, 1456.01],
-    ['Vehicles', 'Service Vehicle (RM)', 'NFJ 6654', 'Bridge RM', 'nos.', 120252.98, 1, 4610.34],
-    ['Vehicles', 'Service Vehicle (EPOXY)', 'NCG 5500', 'EPOXY BRIDGE 1', 'nos.', 120252.98, 2, 4610.34],
-    ['Vehicles', 'Service Vehicle (SEGMENT 10)', 'NEO 5124', 'EPOXY BRIDGE 2', 'nos.', 131224.24, 1, 5030.96],
-    ['Incident Response', 'Flashing Arrow', '', '', 'nos.', 14630.21, 2.5, 480.99],
-    ['Incident Response', 'Tower Light', '', '', 'nos.', 35066.96, 0.67, 768.59],
-    ['Incident Response', 'Advance warning sign', '', '', 'sets', 12378.73, 1.67, 406.97],
-    ['Vegetation Control', 'Grass Cutter (RM)', '', '', 'nos.', 24585, 1, 942.56],
-    ['Vegetation Control', 'Grass Cutter (SEG10)', '', '', 'nos.', 24585, 1, 942.56],
-    ['Cleaning Tools', 'Pressure washer (RM)', '', '', 'nos.', 6063.99, 1, 232.49],
-    ['Cleaning Tools', 'Pressure washer (SEG10)', '', '', 'nos.', 6063.99, 1, 232.49],
-    ['Bridge Epoxy', 'Genset Optimax 5kva', 'RM-GS-1', '', 'nos.', 13268.85, 2, 508.71],
-    ['Bridge Epoxy', 'Wagner Epoxy injection pump', 'RM-IJM-01', '', 'nos.', 8980.16, 2, 344.29],
-    ['Bridge Epoxy', 'Bosch Grinder GWS060', 'RM-G-01', '', 'nos.', 540.18, 3, 20.71],
-    ['Bridge Epoxy', 'Bosch Blower', 'RM-HBM-01', '', 'nos.', 646.58, 2, 24.79],
-    ['Bridge Epoxy', 'Bosch Rotary drill GBH2-24 RE', 'RM-RD-01', '', 'nos.', 2578.13, 3, 98.84],
-  ];
-
-  for (const [cat, name, body, assign, unit, urate, qty, drate] of BILLING_EQUIPMENT) {
-    await pool.query(
-      'INSERT INTO billing_equipment (category, equipment_name, body_no, assignment, unit, unit_rate, contracted_qty, daily_rate) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING',
-      [cat, name, body, assign, unit, urate, qty, drate]
-    );
-  }
+  // Clear out the equipment list (and anything referencing it) — new list to be seeded separately
+  await pool.query("DELETE FROM billing_records WHERE billing_type = 'equipment'");
+  await pool.query('DELETE FROM equipment_tracking');
+  await pool.query('DELETE FROM billing_equipment');
 
   // Add billing_group column if missing
   try { await pool.query("ALTER TABLE billing_manpower ADD COLUMN IF NOT EXISTS billing_group VARCHAR(100) DEFAULT 'Bridge RM & Epoxy'"); } catch (e) {}
@@ -456,12 +439,14 @@ async function init() {
 
   console.log('Billing data seeded');
 
+  const deptIds = {};
   for (const dept of DEPARTMENTS) {
     const res = await pool.query(
       'INSERT INTO departments (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = $1 RETURNING id',
       [dept]
     );
     const deptId = res.rows[0].id;
+    deptIds[dept] = deptId;
 
     for (const activity of ACTIVITIES[dept]) {
       await pool.query(
@@ -470,6 +455,43 @@ async function init() {
       );
     }
   }
+
+  // ── Activity Dashboard: tool groups (nested under a department) + logged entries ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tool_groups (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL UNIQUE,
+      department_id INTEGER REFERENCES departments(id),
+      sort_order INTEGER DEFAULT 0
+    );
+  `);
+  try { await pool.query('ALTER TABLE tool_groups ADD COLUMN IF NOT EXISTS department_id INTEGER REFERENCES departments(id)'); } catch (e) {}
+  // One-time cleanup of the old ungrouped placeholder tool_groups (self-limiting: only matches rows with no department)
+  await pool.query('DELETE FROM tool_groups WHERE department_id IS NULL');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tool_entries (
+      id SERIAL PRIMARY KEY,
+      group_id INTEGER REFERENCES tool_groups(id) ON DELETE CASCADE,
+      entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      category VARCHAR(100) NOT NULL,
+      item_description VARCHAR(255) NOT NULL,
+      qty_required DECIMAL(10,2) NOT NULL DEFAULT 0,
+      actual_qty DECIMAL(10,2) NOT NULL DEFAULT 0,
+      remarks TEXT,
+      submitted_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  for (let i = 0; i < TOOL_GROUPS_SEED.length; i++) {
+    const [deptName, groupName] = TOOL_GROUPS_SEED[i];
+    await pool.query(
+      'INSERT INTO tool_groups (name, department_id, sort_order) VALUES ($1, $2, $3) ON CONFLICT (name) DO UPDATE SET department_id = $2, sort_order = $3',
+      [groupName, deptIds[deptName], i + 1]
+    );
+  }
+  console.log('Tool groups seeded: ' + TOOL_GROUPS_SEED.length + ' groups');
 
   const adminExists = await pool.query("SELECT id FROM users WHERE email = 'admin@savvice.com'");
   if (adminExists.rows.length === 0) {

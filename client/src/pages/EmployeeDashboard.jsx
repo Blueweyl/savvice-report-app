@@ -32,12 +32,20 @@ export default function EmployeeDashboard() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-800">My Reports</h2>
-        <Link
-          to="/reports/new"
-          className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-2.5 rounded-lg font-medium transition"
-        >
-          + New Report
-        </Link>
+        <div className="flex gap-3">
+          <Link
+            to="/reports/new"
+            className="bg-blue-700 hover:bg-blue-800 text-white px-6 py-2.5 rounded-lg font-medium transition"
+          >
+            + New Report
+          </Link>
+          <Link
+            to="/equipment-dashboard"
+            className="bg-white hover:bg-gray-50 text-blue-700 border border-blue-700 px-6 py-2.5 rounded-lg font-medium transition"
+          >
+            Equipment
+          </Link>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-6">

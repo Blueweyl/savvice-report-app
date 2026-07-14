@@ -11,6 +11,7 @@ import Schedule from './pages/Schedule';
 import Attendance from './pages/Attendance';
 import Billing from './pages/Billing';
 import Equipment from './pages/Equipment';
+import EquipmentDashboard from './pages/EquipmentDashboard';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children, role }) {
@@ -83,6 +84,14 @@ export default function App() {
           element={
             <PrivateRoute role="admin">
               <Layout><Equipment /></Layout>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/equipment-dashboard"
+          element={
+            <PrivateRoute>
+              <Layout><EquipmentDashboard /></Layout>
             </PrivateRoute>
           }
         />
